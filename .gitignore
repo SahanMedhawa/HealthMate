@@ -8,4 +8,4 @@ build/
 Thumbs.db
 *.log
 npm-debug.log*
-serviceAccountKey.json/
+serviceAccountKey.json
