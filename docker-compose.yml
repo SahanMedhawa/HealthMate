@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: healthmate-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: healthmate
+    networks:
+      - healthmate-network
+
+  patient-service:
+    build: ./microservices/patient-service
+    container_name: healthmate-patient
+    restart: unless-stopped
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./microservices/patient-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/patient-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  doctor-service:
+    build: ./microservices/doctor-service
+    container_name: healthmate-doctor
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    env_file:
+      - ./microservices/doctor-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/doctor-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  appointment-service:
+    build: ./microservices/appointment-service
+    container_name: healthmate-appointment
+    restart: unless-stopped
+    ports:
+      - "5003:5003"
+    env_file:
+      - ./microservices/appointment-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/appointment-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  admin-service:
+    build: ./microservices/admin-service
+    container_name: healthmate-admin
+    restart: unless-stopped
+    ports:
+      - "5004:5004"
+    env_file:
+      - ./microservices/admin-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/admin-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  telemedicine-service:
+    build: ./microservices/telemedicine-service
+    container_name: healthmate-telemedicine
+    restart: unless-stopped
+    ports:
+      - "5005:5005"
+    env_file:
+      - ./microservices/telemedicine-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/telemedicine-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  notification-service:
+    build: ./microservices/notification-service
+    container_name: healthmate-notification
+    restart: unless-stopped
+    ports:
+      - "5006:5006"
+    env_file:
+      - ./microservices/notification-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/notification-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  ai-service:
+    build: ./microservices/AI-service
+    container_name: healthmate-ai
+    restart: unless-stopped
+    ports:
+      - "5007:5007"
+    env_file:
+      - ./microservices/AI-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/AI-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  payment-service:
+    build: ./microservices/payment-service
+    container_name: healthmate-payment
+    restart: unless-stopped
+    ports:
+      - "5008:5008"
+    env_file:
+      - ./microservices/payment-service/.env
+      - .env
+    depends_on:
+      - mongodb
+    volumes:
+      - ./microservices/payment-service:/usr/src/app
+      - /usr/src/app/node_modules
+    networks:
+      - healthmate-network
+
+  nginx-gateway:
+    image: nginx:alpine
+    container_name: healthmate-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - patient-service
+      - doctor-service
+      - appointment-service
+      - admin-service
+      - notification-service
+    networks:
+      - healthmate-network
+
+volumes:
+  mongodb_data:
+
+
+networks:
+  healthmate-network:
+    driver: bridge
