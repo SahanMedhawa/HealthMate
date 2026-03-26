@@ -9,3 +9,6 @@ Thumbs.db
 *.log
 npm-debug.log*
 serviceAccountKey.json
+
+
+microservices/admin-service/src/scripts/create-admin.ts
