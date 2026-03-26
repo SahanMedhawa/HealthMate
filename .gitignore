@@ -9,3 +9,4 @@ Thumbs.db
 *.log
 npm-debug.log*
 serviceAccountKey.json
+create-admin.ts
