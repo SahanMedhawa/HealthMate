@@ -20,15 +20,25 @@ export interface IUser extends Document {
         endTime: string;
         slots: number;
     }>;
-    consultationFee?: number;
 }
 
 const userSchema = new Schema<IUser>(
     {
         name: { type: String, required: true, trim: true, maxlength: 100 },
-        email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+        email: {
+            type: String,
+            required: true,
+            unique: true,
+            lowercase: true,
+            trim: true,
+        },
         password: { type: String, select: false },
-        userType: { type: String, enum: ["patient", "doctor", "admin"], required: true, default: "doctor" },
+        userType: {
+            type: String,
+            enum: ["patient", "doctor", "admin"],
+            required: true,
+            default: "patient",
+        },
         firebaseUid: { type: String, unique: true, sparse: true },
         photoURL: { type: String },
         isVerified: { type: Boolean, default: false },
@@ -41,9 +51,14 @@ const userSchema = new Schema<IUser>(
         },
         profilePictureUrl: { type: String },
         availability: [
-            { day: String, date: String, startTime: String, endTime: String, slots: Number },
+            {
+                day: String,
+                date: String,
+                startTime: String,
+                endTime: String,
+                slots: Number,
+            },
         ],
-        consultationFee: { type: Number },
     },
     { timestamps: true }
 );

@@ -2,7 +2,9 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import doctorRoutes from "./routes/doctor.routes.js";
+import patientRoutes from "./routes/patient.routes.js";
+import "./config/firebase.js";
+
 
 dotenv.config();
 
@@ -21,33 +23,39 @@ app.use(
 );
 app.use(express.json());
 
-app.use("/api/doctors", doctorRoutes);
+// Routes
+app.use("/api/patient", patientRoutes);
 
+// Health check
 app.get("/api/health", (_req, res) => {
     res.json({
         status: "ok",
-        service: "doctor-service",
-        port: process.env.PORT || 5002,
+        service: "patient-service",
+        port: process.env.PORT || 5001,
         timestamp: new Date().toISOString(),
     });
 });
 
+// 404
 app.use("*", (_req, res) => {
     res.status(404).json({ success: false, message: "Route not found" });
 });
 
-const PORT = process.env.PORT || 5002;
+// Start
+const PORT = process.env.PORT || 5001;
 const MONGO_URI =
-    process.env.MONGO_URI || "mongodb://localhost:27017/healthmate_doctors";
+    process.env.MONGO_URI || "mongodb://localhost:27017/healthmate_patients";
 
 mongoose
     .connect(MONGO_URI)
     .then(() => {
-        console.log("Doctor Service: MongoDB connected");
-        app.listen(PORT, () => console.log(`Doctor Service running on port ${PORT}`));
+        console.log("Patient Service: MongoDB connected");
+        app.listen(PORT, () => {
+            console.log(`Patient Service running on port ${PORT}`);
+        });
     })
     .catch((err) => {
-        console.error("Doctor Service: MongoDB connection error:", err);
+        console.error("Patient Service: MongoDB connection error:", err);
         process.exit(1);
     });
 

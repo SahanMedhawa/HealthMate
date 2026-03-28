@@ -10,6 +10,7 @@ declare global {
                 userType: string;
                 fullName?: string;
                 specialization?: string;
+                consultationFee: number;
             };
         }
     }
@@ -44,6 +45,7 @@ export const requireDoctor = async (
             userType: doctor.userType,
             fullName: doctor.fullName,
             specialization: doctor.specialization,
+            consultationFee: doctor.consultationFee || 0,
         };
 
         next();
@@ -78,6 +80,7 @@ export const optionalDoctorAuth = async (
                     userType: doctor.userType,
                     fullName: doctor.fullName,
                     specialization: doctor.specialization,
+                    consultationFee: doctor.consultationFee || 0,
                 };
             }
         }
