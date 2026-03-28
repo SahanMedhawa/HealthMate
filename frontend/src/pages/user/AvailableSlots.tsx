@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { format, startOfMonth, endOfMonth, addMinutes, addMonths, subMonths } from "date-fns";
+import { format, startOfMonth, endOfMonth, addMinutes, addMonths, subMonths, isBefore, startOfToday } from "date-fns";
 import type { DoctorData } from "../../services/api";
 import Navbar from "../../components/user/Navbar";
 import Footer from "../../components/Footer";
@@ -50,6 +50,8 @@ const AvailableSlots: React.FC = () => {
   );
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
 
+  const today = startOfToday(); // Get today's date at start of day
+
   // Calendar days for current month with proper week alignment
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -74,6 +76,11 @@ const AvailableSlots: React.FC = () => {
     }
     return result;
   }, [calendarStart, calendarEnd]);
+
+  // Function to check if a date is before today
+  const isDateBeforeToday = (date: Date): boolean => {
+    return isBefore(date, today);
+  };
 
   // Fetch booked appointments for the doctor
   const fetchBookedAppointments = async () => {
@@ -160,6 +167,15 @@ const AvailableSlots: React.FC = () => {
   // Get slots for selected day
   const slots = selectedDate ? getSlotsForDay(doctor.availability, selectedDate, bookedAppointments[selectedDate] || []) : [];
 
+  // Handle date selection with validation
+  const handleDateSelection = (dateStr: string) => {
+    const selectedDateObj = new Date(dateStr + 'T00:00:00');
+    if (!isDateBeforeToday(selectedDateObj)) {
+      setSelectedDate(dateStr);
+      setSelectedSlot(null); // Clear selected slot when changing date
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-teal-50">
       <Navbar />
@@ -204,6 +220,10 @@ const AvailableSlots: React.FC = () => {
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
               <span className="text-xs text-gray-600">Available</span>
+              <div className="w-2 h-2 bg-gray-300 rounded-full ml-2"></div>
+              <span className="text-xs text-gray-600">No Availability</span>
+              <div className="w-2 h-2 bg-gray-200 rounded-full ml-2"></div>
+              <span className="text-xs text-gray-600">Past Dates</span>
             </div>
           </div>
 
@@ -218,28 +238,48 @@ const AvailableSlots: React.FC = () => {
               const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
               const isCurrentYear = day.getFullYear() === currentMonth.getFullYear();
               const isInCurrentMonth = isCurrentMonth && isCurrentYear;
+              const isPastDate = isDateBeforeToday(day);
+              
+              // Determine if date should be selectable: only disable past dates
+              const isSelectable = !isPastDate && isInCurrentMonth;
+              
+              // Determine styling based on availability and date status
+              let buttonStyle = "";
+              if (isPastDate) {
+                buttonStyle = "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-50";
+              } else if (!isInCurrentMonth) {
+                buttonStyle = "bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed";
+              } else if (isAvailable) {
+                buttonStyle = "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-300 text-blue-800 hover:from-blue-100 hover:to-blue-200 hover:border-blue-400 shadow-sm cursor-pointer";
+              } else {
+                // Future dates with no availability - still selectable
+                buttonStyle = "bg-white border-gray-200 text-gray-600 hover:bg-gray-50 hover:border-gray-300 cursor-pointer";
+              }
 
               return (
                 <button
                   key={dateStr}
-                  className={`rounded-lg text-sm font-medium border transition-all duration-200 h-12 w-12 flex items-center justify-center
-                    ${!isInCurrentMonth
-                      ? "bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed"
-                      : isAvailable
-                        ? "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-300 text-blue-800 hover:from-blue-100 hover:to-blue-200 hover:border-blue-400 shadow-sm"
-                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 hover:border-gray-300"
-                    }
-                    ${selectedDate === dateStr ? "ring-2 ring-blue-500 shadow-lg scale-105" : ""}
-                    ${isToday ? "ring-2 ring-green-400" : ""}
+                  className={`rounded-lg text-sm font-medium border transition-all duration-200 h-12 w-12 flex items-center justify-center ${buttonStyle}
+                    ${selectedDate === dateStr && !isPastDate ? "ring-2 ring-blue-500 shadow-lg scale-105" : ""}
+                    ${isToday && !isPastDate ? "ring-2 ring-green-400" : ""}
                   `}
-                  onClick={() => isInCurrentMonth && setSelectedDate(dateStr)}
-                  disabled={!isInCurrentMonth}
+                  onClick={() => isSelectable && handleDateSelection(dateStr)}
+                  disabled={!isSelectable}
+                  title={
+                    isPastDate ? "Past dates cannot be selected" : 
+                    !isAvailable && !isPastDate ? "No availability on this date" : 
+                    "Click to view available slots"
+                  }
                 >
                   <div className="flex flex-col items-center justify-center">
-                    <span className={`text-sm font-semibold ${!isInCurrentMonth ? "text-gray-300" : ""}`}>
+                    <span className={`text-sm font-semibold ${
+                      isPastDate ? "text-gray-400" : 
+                      !isInCurrentMonth ? "text-gray-300" :
+                      !isAvailable && !isPastDate ? "text-gray-600" : ""
+                    }`}>
                       {day.getDate()}
                     </span>
-                    {isToday && <div className="w-1.5 h-1.5 bg-green-500 rounded-full mt-0.5"></div>}
+                    {isToday && !isPastDate && <div className="w-1.5 h-1.5 bg-green-500 rounded-full mt-0.5"></div>}
                   </div>
                 </button>
               );
@@ -254,12 +294,28 @@ const AvailableSlots: React.FC = () => {
                 <input
                   type="date"
                   value={selectedDate || ""}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  min={format(today, "yyyy-MM-dd")} // Disable past dates in date picker
+                  onChange={(e) => {
+                    const selectedDateValue = e.target.value;
+                    if (selectedDateValue) {
+                      const selectedDateObj = new Date(selectedDateValue + 'T00:00:00');
+                      if (!isDateBeforeToday(selectedDateObj)) {
+                        setSelectedDate(selectedDateValue);
+                        setSelectedSlot(null); // Clear selected slot when changing date
+                      }
+                    } else {
+                      setSelectedDate(null);
+                      setSelectedSlot(null);
+                    }
+                  }}
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 {selectedDate && (
                   <button
-                    onClick={() => setSelectedDate(null)}
+                    onClick={() => {
+                      setSelectedDate(null);
+                      setSelectedSlot(null);
+                    }}
                     className="px-2 py-1.5 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
                   >
                     Clear
@@ -271,8 +327,14 @@ const AvailableSlots: React.FC = () => {
                 <span>{selectedDate ? 'Auto-refresh paused' : 'Auto-refresh'}</span>
               </div>
             </div>
+            {selectedDate && isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) && (
+              <p className="text-xs text-red-500 mt-2">
+                ⚠️ This date is in the past. Please select a future date.
+              </p>
+            )}
           </div>
-          {selectedDate && (
+          
+          {selectedDate && !isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) && (
             <div className="mt-4">
               <div className="font-semibold mb-2">Available Slots on {selectedDate}:</div>
               {loading ? (
@@ -280,7 +342,12 @@ const AvailableSlots: React.FC = () => {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {slots.length === 0 ? (
-                    <span className="text-gray-500">No slots available</span>
+                    <div className="text-gray-500 bg-gray-50 rounded-lg p-4 text-center w-full">
+                      <p>No slots available on this date.</p>
+                      {!availableDates.includes(selectedDate) && (
+                        <p className="text-sm text-gray-400 mt-1">The doctor is not available on this date.</p>
+                      )}
+                    </div>
                   ) : (
                     slots.map(slot => (
                       <button
@@ -298,10 +365,21 @@ const AvailableSlots: React.FC = () => {
               )}
             </div>
           )}
+
+          {/* Show message for selected past date */}
+          {selectedDate && isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) && (
+            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="text-center">
+                <p className="text-red-600 text-sm font-medium">Cannot book appointments for past dates</p>
+                <p className="text-red-500 text-xs mt-1">Please select a future date.</p>
+              </div>
+            </div>
+          )}
         </div>
+        
         <button
-          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 mt-4"
-          disabled={!selectedDate || !selectedSlot}
+          className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!selectedDate || !selectedSlot || (selectedDate ? isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) : false)}
           onClick={() => setShowAppointmentModal(true)}
         >
           {rescheduleAppointmentId ? "Reschedule Appointment" : "Book an Appointment"}

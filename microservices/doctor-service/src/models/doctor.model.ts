@@ -20,6 +20,7 @@ export interface IUser extends Document {
         endTime: string;
         slots: number;
     }>;
+    consultationFee?: number;
 }
 
 const userSchema = new Schema<IUser>(
@@ -42,6 +43,7 @@ const userSchema = new Schema<IUser>(
         availability: [
             { day: String, date: String, startTime: String, endTime: String, slots: Number },
         ],
+        consultationFee: { type: Number },
     },
     { timestamps: true }
 );
