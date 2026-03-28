@@ -176,3 +176,81 @@ export const deleteDoctor = async (req: Request, res: Response): Promise<void> =
         res.json({ success: true, message: "Doctor deleted" });
     } catch (error: any) { res.status(500).json({ success: false, message: error.message }); }
 };
+export const updateConsultationFee = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+        const { consultationFee } = req.body;
+
+        // Validate consultation fee
+        if (consultationFee === undefined) {
+            res.status(400).json({ success: false, message: "Consultation fee is required" });
+            return;
+        }
+
+        if (typeof consultationFee !== 'number' || isNaN(consultationFee)) {
+            res.status(400).json({ success: false, message: "Consultation fee must be a valid number" });
+            return;
+        }
+
+        if (consultationFee < 0) {
+            res.status(400).json({ success: false, message: "Consultation fee cannot be negative" });
+            return;
+        }
+
+        if (consultationFee > 10000) {
+            res.status(400).json({ success: false, message: "Consultation fee cannot exceed $10,000" });
+            return;
+        }
+
+        // Update the doctor's consultation fee
+        const doctor = await User.findOneAndUpdate(
+            { _id: id, userType: "doctor" },
+            { consultationFee },
+            { new: true, runValidators: true }
+        );
+
+        if (!doctor) {
+            res.status(404).json({ success: false, message: "Doctor not found" });
+            return;
+        }
+
+        res.status(200).json({
+            success: true,
+            message: "Consultation fee updated successfully",
+            data: {
+                consultationFee: doctor.consultationFee,
+                doctorId: doctor._id,
+                doctorName: doctor.fullName || doctor.name
+            }
+        });
+    } catch (error: any) {
+        console.error("Error updating consultation fee:", error);
+        res.status(500).json({ success: false, message: "Failed to update consultation fee" });
+    }
+};
+
+export const getConsultationFee = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { id } = req.params;
+
+        const doctor = await User.findOne({ _id: id, userType: "doctor" }).select("consultationFee fullName name specialization");
+
+        if (!doctor) {
+            res.status(404).json({ success: false, message: "Doctor not found" });
+            return;
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                consultationFee: doctor.consultationFee || 0,
+                doctorId: doctor._id,
+                doctorName: doctor.fullName || doctor.name,
+                specialization: doctor.specialization
+            }
+        });
+    } catch (error: any) {
+        console.error("Error fetching consultation fee:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch consultation fee" });
+    }
+};

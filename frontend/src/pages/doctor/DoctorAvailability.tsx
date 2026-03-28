@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../services/api";
-import { format, startOfMonth, endOfMonth, addMinutes, addMonths, subMonths } from "date-fns";
+import { format, startOfMonth, endOfMonth, addMinutes, addMonths, subMonths, isBefore, startOfToday } from "date-fns";
 import UpdateAvailability from "../../components/doctor/UpdateAvailability";
 
 interface AvailabilitySlot {
@@ -41,6 +41,8 @@ const DoctorAvailability: React.FC = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [showAvailabilityModal, setShowAvailabilityModal] = useState(false);
 
+  const today = startOfToday(); // Get today's date at start of day
+
   // Calendar days for current month with proper week alignment
   const monthStart = startOfMonth(currentMonth);
   const monthEnd = endOfMonth(currentMonth);
@@ -76,6 +78,19 @@ const DoctorAvailability: React.FC = () => {
   
   console.log("Available dates:", availableDates);
 
+  // Function to check if a date is before today
+  const isDateBeforeToday = (date: Date): boolean => {
+    return isBefore(date, today);
+  };
+
+  // Function to handle date selection with validation
+  const handleDateSelection = (dateStr: string) => {
+    const selectedDateObj = new Date(dateStr + 'T00:00:00');
+    if (!isDateBeforeToday(selectedDateObj)) {
+      setSelectedDate(dateStr);
+    }
+  };
+
   useEffect(() => {
     if (user?.id) {
       fetchAvailability();
@@ -96,7 +111,6 @@ const DoctorAvailability: React.FC = () => {
       setLoading(false);
     }
   };
-
 
   // Get slots for selected day
   const slots = selectedDate ? getSlotsForDay(availability, selectedDate) : [];
@@ -164,6 +178,8 @@ const DoctorAvailability: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 <span className="text-xs text-gray-600">Available</span>
+                <div className="w-2 h-2 bg-gray-300 rounded-full ml-2"></div>
+                <span className="text-xs text-gray-600">Past Dates</span>
               </div>
             </div>
             
@@ -178,28 +194,38 @@ const DoctorAvailability: React.FC = () => {
                 const isCurrentMonth = day.getMonth() === currentMonth.getMonth();
                 const isCurrentYear = day.getFullYear() === currentMonth.getFullYear();
                 const isInCurrentMonth = isCurrentMonth && isCurrentYear;
+                const isPastDate = isDateBeforeToday(day);
+                
+                // Determine if date should be selectable
+                const isSelectable = !isPastDate && isInCurrentMonth;
                 
                 return (
                   <button
                     key={dateStr}
                     className={`rounded-lg text-sm font-medium border transition-all duration-200 h-12 w-12 flex items-center justify-center
-                      ${!isInCurrentMonth 
+                      ${isPastDate 
+                        ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed opacity-50" 
+                        : !isInCurrentMonth 
                         ? "bg-gray-50 border-gray-100 text-gray-300 cursor-not-allowed" 
                         : isAvailable 
-                        ? "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-300 text-blue-800 hover:from-blue-100 hover:to-blue-200 hover:border-blue-400 shadow-sm" 
-                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                        ? "bg-gradient-to-br from-blue-50 to-blue-100 border-blue-300 text-blue-800 hover:from-blue-100 hover:to-blue-200 hover:border-blue-400 shadow-sm cursor-pointer" 
+                        : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50 cursor-pointer"
                       }
-                      ${selectedDate === dateStr ? "ring-2 ring-blue-500 shadow-lg scale-105" : ""}
-                      ${isToday ? "ring-2 ring-green-400" : ""}
+                      ${selectedDate === dateStr && !isPastDate ? "ring-2 ring-blue-500 shadow-lg scale-105" : ""}
+                      ${isToday && !isPastDate ? "ring-2 ring-green-400" : ""}
                     `}
-                    onClick={() => isInCurrentMonth && setSelectedDate(dateStr)}
-                    disabled={!isInCurrentMonth}
+                    onClick={() => isSelectable && handleDateSelection(dateStr)}
+                    disabled={!isSelectable}
+                    title={isPastDate ? "Past dates cannot be selected" : ""}
                   >
                     <div className="flex flex-col items-center justify-center">
-                      <span className={`text-sm font-semibold ${!isInCurrentMonth ? "text-gray-300" : ""}`}>
+                      <span className={`text-sm font-semibold ${
+                        isPastDate ? "text-gray-400" : 
+                        !isInCurrentMonth ? "text-gray-300" : ""
+                      }`}>
                         {day.getDate()}
                       </span>
-                      {isToday && <div className="w-1.5 h-1.5 bg-green-500 rounded-full mt-0.5"></div>}
+                      {isToday && !isPastDate && <div className="w-1.5 h-1.5 bg-green-500 rounded-full mt-0.5"></div>}
                     </div>
                   </button>
                 );
@@ -213,7 +239,18 @@ const DoctorAvailability: React.FC = () => {
                 <input
                   type="date"
                   value={selectedDate || ""}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  min={format(today, "yyyy-MM-dd")} // Disable past dates in date picker
+                  onChange={(e) => {
+                    const selectedDateValue = e.target.value;
+                    if (selectedDateValue) {
+                      const selectedDateObj = new Date(selectedDateValue + 'T00:00:00');
+                      if (!isDateBeforeToday(selectedDateObj)) {
+                        setSelectedDate(selectedDateValue);
+                      }
+                    } else {
+                      setSelectedDate(null);
+                    }
+                  }}
                   className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 {selectedDate && (
@@ -225,11 +262,16 @@ const DoctorAvailability: React.FC = () => {
                   </button>
                 )}
               </div>
+              {selectedDate && isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) && (
+                <p className="text-xs text-red-500 mt-2">
+                  ⚠️ This date is in the past. Please select a future date.
+                </p>
+              )}
             </div>
           </div>
 
           {/* Selected Date Slots */}
-          {selectedDate && (
+          {selectedDate && !isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-semibold text-gray-900">
@@ -264,6 +306,27 @@ const DoctorAvailability: React.FC = () => {
             </div>
           )}
 
+          {/* Show message for selected past date */}
+          {selectedDate && isDateBeforeToday(new Date(selectedDate + 'T00:00:00')) && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-6">
+              <div className="text-center">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <p className="text-red-600 text-lg font-medium">Cannot view past dates</p>
+                <p className="text-red-500 text-sm mt-2">Please select a future date to view availability.</p>
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Availability Summary */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-6">
@@ -285,30 +348,41 @@ const DoctorAvailability: React.FC = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {availability.map((slot, index) => (
-                  <div key={index} className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200 hover:shadow-md transition-all duration-200">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-semibold text-gray-900">{slot.day}</span>
-                      <span className="text-sm text-gray-500 bg-white px-2 py-1 rounded-full">
-                        {format(new Date(slot.date + 'T00:00:00'), "MMM dd")}
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center text-sm text-gray-600">
-                        <svg className="w-4 h-4 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {slot.startTime} - {slot.endTime}
+                {availability.map((slot, index) => {
+                  const slotDate = new Date(slot.date + 'T00:00:00');
+                  const isPastSlotDate = isDateBeforeToday(slotDate);
+                  
+                  return (
+                    <div 
+                      key={index} 
+                      className={`bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border transition-all duration-200 ${
+                        isPastSlotDate ? 'border-gray-200 opacity-60' : 'border-gray-200 hover:shadow-md'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-semibold text-gray-900">{slot.day}</span>
+                        <span className="text-sm text-gray-500 bg-white px-2 py-1 rounded-full">
+                          {format(slotDate, "MMM dd")}
+                          {isPastSlotDate && <span className="ml-1 text-xs text-red-500">(Past)</span>}
+                        </span>
                       </div>
-                      <div className="flex items-center text-sm text-gray-600">
-                        <svg className="w-4 h-4 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        {slot.slots} slots available
+                      <div className="space-y-2">
+                        <div className="flex items-center text-sm text-gray-600">
+                          <svg className="w-4 h-4 text-blue-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {slot.startTime} - {slot.endTime}
+                        </div>
+                        <div className="flex items-center text-sm text-gray-600">
+                          <svg className="w-4 h-4 text-green-500 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          {slot.slots} slots available
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

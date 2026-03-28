@@ -43,6 +43,7 @@ interface ReportData {
   estimatedRevenue: number;
   peakDay: string;
   peakHour: string;
+  consultationFee: number; // Added consultation fee
 }
 
 type ReportType = 'overview' | 'appointments' | 'patients' | 'revenue' | 'cancellations' | 'trends';
@@ -56,6 +57,7 @@ const DoctorReports: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState('');
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [consultationFee, setConsultationFee] = useState<number>(0);
   const [reportData, setReportData] = useState<ReportData>({
     totalAppointments: 0,
     completedAppointments: 0,
@@ -69,13 +71,28 @@ const DoctorReports: React.FC = () => {
     estimatedRevenue: 0,
     peakDay: 'N/A',
     peakHour: 'N/A',
+    consultationFee: 0,
   });
 
   useEffect(() => {
     if (user?.id) {
+      fetchConsultationFee();
       fetchReportData();
     }
   }, [user?.id, dateRange, customStartDate, customEndDate]);
+
+  const fetchConsultationFee = async () => {
+    if (!user?.id) return;
+    try {
+      const response = await api.get(`/doctors/${user.id}`);
+      if (response.data.success && response.data.doctor) {
+        const fee = response.data.doctor.consultationFee || 0;
+        setConsultationFee(fee);
+      }
+    } catch (error) {
+      console.error('Error fetching consultation fee:', error);
+    }
+  };
 
   const getDateRangeFilter = () => {
     const today = new Date();
@@ -167,24 +184,21 @@ const DoctorReports: React.FC = () => {
     const daysDiff = Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
     const averageAppointmentsPerDay = total / daysDiff;
     
-    // Get real revenue from diagnosis API
+    // Calculate revenue using actual consultation fee
     let estimatedRevenue = 0;
     try {
-      console.log(`Doctor fetching revenue for date range: ${format(startDate, 'yyyy-MM-dd')} to ${format(endDate, 'yyyy-MM-dd')}`);
+      // Try to get revenue from diagnosis API first
       const { getRevenueStats } = await import('../../services/diagnosis.api');
       const revenueStats = await getRevenueStats({
         doctorId: user?.id,
         startDate: format(startDate, 'yyyy-MM-dd'),
         endDate: format(endDate, 'yyyy-MM-dd'),
       });
-      console.log('Doctor revenue stats received:', revenueStats);
       estimatedRevenue = revenueStats.totalRevenue;
-      console.log('Doctor estimated revenue:', estimatedRevenue);
     } catch (error) {
       console.error('Error fetching revenue stats:', error);
-      // Fallback to estimated revenue if diagnosis data not available
-      estimatedRevenue = completed * 3000; // 1000 registration + ~2000 average doctor fee
-      console.log('Using fallback doctor revenue:', estimatedRevenue);
+      // Fallback: calculate revenue based on consultation fee
+      estimatedRevenue = completed * consultationFee;
     }
     
     // Peak day
@@ -219,6 +233,7 @@ const DoctorReports: React.FC = () => {
       estimatedRevenue,
       peakDay,
       peakHour,
+      consultationFee,
     });
   };
 
@@ -257,6 +272,7 @@ const DoctorReports: React.FC = () => {
       ['Cancelled Appointments', reportData.cancelledAppointments.toString()],
       ['Total Patients', reportData.totalPatients.toString()],
       ['New Patients', reportData.newPatients.toString()],
+      ['Consultation Fee', `LKR ${reportData.consultationFee.toLocaleString()}`],
       ['Total Revenue', `LKR ${reportData.estimatedRevenue.toLocaleString()}`],
       ['Completion Rate', `${reportData.completionRate.toFixed(1)}%`],
       ['Cancellation Rate', `${reportData.cancellationRate.toFixed(1)}%`],
@@ -331,9 +347,10 @@ const DoctorReports: React.FC = () => {
     yPosition += 8;
     
     const revenueRows = [
+      ['Consultation Fee (per appointment)', `LKR ${reportData.consultationFee.toLocaleString()}`],
       ['Revenue from Completed Appointments', `LKR ${reportData.estimatedRevenue.toLocaleString()}`],
-      ['Lost Due to Cancellations', `-LKR ${(reportData.cancelledAppointments * 3000).toLocaleString()}`],
-      ['Potential if All Completed', `LKR ${(reportData.totalAppointments * 3000).toLocaleString()}`],
+      ['Lost Due to Cancellations', `-LKR ${(reportData.cancelledAppointments * reportData.consultationFee).toLocaleString()}`],
+      ['Potential if All Completed', `LKR ${(reportData.totalAppointments * reportData.consultationFee).toLocaleString()}`],
     ];
     
     autoTable(doc, {
@@ -634,7 +651,7 @@ const DoctorReports: React.FC = () => {
               </div>
               <div className="mt-4 flex items-center text-sm">
                 <span className="text-gray-600">
-                  LKR {(reportData.estimatedRevenue / Math.max(reportData.completedAppointments, 1)).toFixed(0)} per appointment
+                  LKR {reportData.consultationFee} per appointment
                 </span>
               </div>
             </div>
@@ -796,15 +813,13 @@ const DoctorReports: React.FC = () => {
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg p-6 text-white">
-              <p className="text-emerald-100 text-sm mb-2">Total Revenue</p>
-              <p className="text-4xl font-bold">LKR {reportData.estimatedRevenue.toLocaleString()}</p>
+              <p className="text-emerald-100 text-sm mb-2">Consultation Fee</p>
+              <p className="text-4xl font-bold">LKR {reportData.consultationFee.toLocaleString()}</p>
             </div>
             
-            <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
-              <p className="text-gray-600 text-sm mb-2">Per Appointment</p>
-              <p className="text-3xl font-bold text-gray-900">
-                LKR {(reportData.estimatedRevenue / Math.max(reportData.completedAppointments, 1)).toFixed(0)}
-              </p>
+            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg p-6 text-white">
+              <p className="text-emerald-100 text-sm mb-2">Total Revenue</p>
+              <p className="text-4xl font-bold">LKR {reportData.estimatedRevenue.toLocaleString()}</p>
             </div>
             
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
@@ -815,7 +830,7 @@ const DoctorReports: React.FC = () => {
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
               <p className="text-gray-600 text-sm mb-2">Potential Revenue</p>
               <p className="text-3xl font-bold text-blue-600">
-                LKR {((reportData.totalAppointments - reportData.cancelledAppointments) * 3000).toLocaleString()}
+                LKR {((reportData.totalAppointments - reportData.cancelledAppointments) * reportData.consultationFee).toLocaleString()}
               </p>
             </div>
           </div>
@@ -824,20 +839,24 @@ const DoctorReports: React.FC = () => {
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Revenue Analysis</h3>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
+                <span className="text-gray-700">Consultation Fee (per appointment)</span>
+                <span className="font-bold text-emerald-600">LKR {reportData.consultationFee.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center">
                 <span className="text-gray-700">Revenue from Completed Appointments</span>
                 <span className="font-bold text-green-600">LKR {reportData.estimatedRevenue.toLocaleString()}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-700">Lost Due to Cancellations</span>
-                <span className="font-bold text-red-600">-LKR {(reportData.cancelledAppointments * 3000).toLocaleString()}</span>
+                <span className="font-bold text-red-600">-LKR {(reportData.cancelledAppointments * reportData.consultationFee).toLocaleString()}</span>
               </div>
               <div className="border-t border-gray-200 pt-3 mt-3 flex justify-between items-center">
                 <span className="text-gray-900 font-semibold">Potential if All Completed</span>
-                <span className="font-bold text-blue-600">LKR {(reportData.totalAppointments * 3000).toLocaleString()}</span>
+                <span className="font-bold text-blue-600">LKR {(reportData.totalAppointments * reportData.consultationFee).toLocaleString()}</span>
               </div>
             </div>
             <p className="text-sm text-gray-600 mt-4 p-3 bg-white rounded-lg">
-              💡 <strong>Insight:</strong> Reducing cancellations by 50% could add LKR {((reportData.cancelledAppointments * 3000) / 2).toLocaleString()} to your revenue.
+              💡 <strong>Insight:</strong> Reducing cancellations by 50% could add LKR {((reportData.cancelledAppointments * reportData.consultationFee) / 2).toLocaleString()} to your revenue.
             </p>
           </div>
         </div>
@@ -870,7 +889,7 @@ const DoctorReports: React.FC = () => {
                 <h4 className="font-semibold text-gray-900">Lost Revenue</h4>
                 <BanknotesIcon className="h-6 w-6 text-gray-500" />
               </div>
-              <p className="text-4xl font-bold text-gray-900">LKR {(reportData.cancelledAppointments * 3000).toLocaleString()}</p>
+              <p className="text-4xl font-bold text-gray-900">LKR {(reportData.cancelledAppointments * reportData.consultationFee).toLocaleString()}</p>
               <p className="text-sm text-gray-600 mt-2">Due to cancellations</p>
             </div>
           </div>
