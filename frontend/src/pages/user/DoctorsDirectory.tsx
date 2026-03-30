@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { getDoctors } from "../../services/api";
-import type { DoctorData} from "../../services/api";
+import type { DoctorData } from "../../services/api";
 import { useNavigate } from "react-router-dom";
 import Navbar from "../../components/user/Navbar";
-import Footer from "../../components/Footer"; // Create this if not present
+import Footer from "../../components/Footer";
 
 const DoctorsDirectory: React.FC = () => {
   const [doctors, setDoctors] = useState<DoctorData[]>([]);
@@ -78,32 +78,32 @@ const DoctorsDirectory: React.FC = () => {
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-gray-700">Search by Name</label>
               <div className="relative">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Enter doctor's name"
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Enter doctor's name"
                   className="w-full px-4 py-3 pl-12 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-            />
+                />
                 <svg className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </div>
-          </div>
+            </div>
             <div className="space-y-2">
               <label className="block text-sm font-semibold text-gray-700">Filter by Specialization</label>
-            <select
-              value={specialization}
-              onChange={(e) => setSpecialization(e.target.value)}
+              <select
+                value={specialization}
+                onChange={(e) => setSpecialization(e.target.value)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-            >
-              <option value="">All Specializations</option>
-              {specializations.map((spec) => (
-                <option key={spec} value={spec}>
-                  {spec}
-                </option>
-              ))}
-            </select>
+              >
+                <option value="">All Specializations</option>
+                {specializations.map((spec) => (
+                  <option key={spec} value={spec}>
+                    {spec}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </div>
@@ -136,9 +136,9 @@ const DoctorsDirectory: React.FC = () => {
                 {/* Doctor Image */}
                 <div className="text-center mb-6">
                   <div className="relative inline-block">
-                <img
-                  src={doc.profilePictureUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(doc.fullName)}
-                  alt={doc.fullName}
+                    <img
+                      src={doc.profilePictureUrl || "https://ui-avatars.com/api/?name=" + encodeURIComponent(doc.fullName)}
+                      alt={doc.fullName}
                       className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-lg group-hover:scale-105 transition-transform duration-300"
                     />
                     <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-green-500 rounded-full border-4 border-white flex items-center justify-center">
@@ -181,15 +181,94 @@ const DoctorsDirectory: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Consultation Fee Section - SPACED OUT VERSION */}
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-5 border border-purple-100">
+                    {/* Main Fee Display */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <div className="bg-purple-100 p-2 rounded-lg">
+                          <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-700">Consultation Fee</p>
+                          <p className="text-xs text-gray-500">Inclusive of all charges</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-3xl font-bold text-purple-700">
+                          ${doc.consultationFee?.toLocaleString() || '0'}
+                        </span>
+                        <span className="text-sm text-gray-500 ml-1">USD</span>
+                      </div>
+                    </div>
+
+                    {/* Divider with more spacing */}
+                    <div className="relative my-4">
+                      <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-purple-200"></div>
+                      </div>
+                      <div className="relative flex justify-center">
+                        <span className="bg-gradient-to-r from-purple-50 to-pink-50 px-3 text-xs text-purple-500">Fee Breakdown</span>
+                      </div>
+                    </div>
+                    
+                    {/* Fee Breakdown - With increased spacing between items */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                          <span className="text-gray-600">Doctor's Professional Fee</span>
+                        </div>
+                        <span className="font-medium text-gray-800">
+                          ${Math.round((doc.consultationFee || 0) / 1.18).toLocaleString()}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-pink-400 rounded-full"></div>
+                          <span className="text-gray-600">Hospital Facility Charge</span>
+                        </div>
+                        <span className="font-medium text-gray-800">
+                          ${Math.round((doc.consultationFee || 0) * 0.1 / 1.18).toLocaleString()}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-2 h-2 bg-indigo-400 rounded-full"></div>
+                          <span className="text-gray-600">VAT (8%)</span>
+                        </div>
+                        <span className="font-medium text-gray-800">
+                          ${Math.round((doc.consultationFee || 0) * 0.08 / 1.18).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Additional Info with spacing */}
+                    <div className="mt-4 pt-3 border-t border-purple-200">
+                      <div className="flex items-center justify-center space-x-1 text-xs text-gray-500">
+                        <svg className="w-3 h-3 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <span>No hidden charges</span>
+                        <span className="mx-1">•</span>
+                        <span>Tax invoice provided</span>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="pt-4 border-t border-gray-100">
                     <p className="text-gray-600 text-sm leading-relaxed">
-                    {doc.yearsOfExperience >= 10
-                      ? `A highly experienced ${doc.specialization} with a decade of dedication to patient care.`
-                      : `Dedicated ${doc.specialization} with ${doc.yearsOfExperience} years of experience.`}
+                      {doc.yearsOfExperience >= 10
+                        ? `A highly experienced ${doc.specialization} with a decade of dedication to patient care.`
+                        : `Dedicated ${doc.specialization} with ${doc.yearsOfExperience} years of experience.`}
                     </p>
                   </div>
 
-                <button
+                  <button
                     className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                     onClick={() => navigate(`/doctors/${doc._id}/slots`, { state: { doctor: doc } })}
                   >
@@ -199,7 +278,7 @@ const DoctorsDirectory: React.FC = () => {
                       </svg>
                       <span>View Available Slots</span>
                     </span>
-                </button>
+                  </button>
                 </div>
               </div>
             ))}
