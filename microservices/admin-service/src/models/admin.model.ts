@@ -23,8 +23,6 @@ const adminSchema = new Schema<IAdmin>(
     { timestamps: true }
 );
 
-adminSchema.index({ username: 1 });
-adminSchema.index({ email: 1 });
 adminSchema.index({ isActive: 1 });
 
 export default mongoose.model<IAdmin>("Admin", adminSchema);
