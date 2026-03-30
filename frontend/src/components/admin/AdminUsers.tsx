@@ -265,10 +265,25 @@ const AdminUsers: React.FC = () => {
                 <tr key={user._id} className="hover:bg-gray-50 transition-colors duration-200">
                   <td className="w-1/3 px-8 py-6 whitespace-nowrap">
                     <div className="flex items-center">
-                      <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0">
-                        <span className="text-sm font-medium text-gray-700">
-                          {user.name.charAt(0).toUpperCase()}
-                        </span>
+                      <div className="h-10 w-10 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                        <img
+                          src={
+                            user.photoURL ||
+                            user.profilePictureUrl ||
+                            `https://ui-avatars.com/api/?name=${encodeURIComponent(formatName(user))}&background=6b7280&color=fff`
+                          }
+                          alt={formatName(user)}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = "none";
+                            const parent = target.parentElement;
+                            if (parent) {
+                              parent.textContent = formatName(user).charAt(0).toUpperCase();
+                              parent.classList.add("text-sm", "font-medium", "text-gray-700");
+                            }
+                          }}
+                        />
                       </div>
                       <div className="ml-4 min-w-0 text-left">
                         <div className="text-sm font-medium text-gray-900 truncate">
