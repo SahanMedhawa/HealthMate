@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { XMarkIcon, PlusIcon, TrashIcon } from "@heroicons/react/24/outline";
 import api from "../../services/api";
 import { useAuth } from "../../context/AuthContext";
-import { format, addDays, parseISO } from "date-fns";
+import { format, addDays } from "date-fns"; // Remove parseISO if not needed
 
 interface AvailabilitySlot {
   day: string;
@@ -74,7 +74,6 @@ const UpdateAvailability: React.FC<UpdateAvailabilityProps> = ({ isOpen, onClose
     }]);
   };
 
-
   const removeSlot = (index: number) => {
     console.log("Removing slot at index:", index);
     const newAvailability = availability.filter((_, i) => i !== index);
@@ -136,6 +135,15 @@ const UpdateAvailability: React.FC<UpdateAvailabilityProps> = ({ isOpen, onClose
     }
   };
 
+  // Helper function to format date for input value
+  const formatDateForInput = (dateString: string): string => {
+    // If the date already includes time part, extract just the date part
+    if (dateString.includes('T')) {
+      return dateString.split('T')[0];
+    }
+    return dateString;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -164,7 +172,6 @@ const UpdateAvailability: React.FC<UpdateAvailabilityProps> = ({ isOpen, onClose
             </div>
           ) : (
             <div className="space-y-6">
-
               {/* Availability Slots */}
               <div className="space-y-3">
                 {availability.map((slot, index) => (
@@ -185,7 +192,7 @@ const UpdateAvailability: React.FC<UpdateAvailabilityProps> = ({ isOpen, onClose
                         <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
                         <input
                           type="date"
-                          value={slot.date.includes('T') ? format(parseISO(slot.date), "yyyy-MM-dd") : slot.date}
+                          value={formatDateForInput(slot.date)}
                           min={format(new Date(), "yyyy-MM-dd")} // Prevent selecting past dates
                           onChange={(e) => {
                             const selectedDate = e.target.value;
@@ -244,7 +251,6 @@ const UpdateAvailability: React.FC<UpdateAvailabilityProps> = ({ isOpen, onClose
                   </div>
                 ))}
               </div>
-
 
               {/* Add New Slot Button */}
               <button

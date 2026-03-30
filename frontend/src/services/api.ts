@@ -55,6 +55,7 @@ export interface DoctorData {
   };
   profilePictureUrl?: string;
   availability: DoctorAvailability[];
+   consultationFee?: number;
 }
 
 export interface DoctorRegisterData {
@@ -232,9 +233,10 @@ export const createDoctor = async (
   }
 };
 
-export const getDoctors = async (): Promise<
-  ApiResponse<{ doctors: DoctorData[] }>
-> => {
+export const getDoctors = async (): Promise<{
+  success: boolean;
+  doctors: DoctorData[];
+}> => {
   try {
     const response = await api.get("/doctors");
     return response.data;
