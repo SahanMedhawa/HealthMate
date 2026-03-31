@@ -1,30 +1,26 @@
-version: '3.8'
-
 services:
-  mongodb:
-    image: mongo:7
-    container_name: healthmate-mongodb
-    restart: unless-stopped
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    environment:
-      MONGO_INITDB_DATABASE: healthmate
-    networks:
-      - healthmate-network
-
   patient-service:
     build: ./microservices/patient-service
     container_name: healthmate-patient
     restart: unless-stopped
     ports:
       - "5001:5001"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/patient-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5001},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/patient-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -37,11 +33,22 @@ services:
     restart: unless-stopped
     ports:
       - "5002:5002"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/doctor-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5002},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/doctor-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -54,11 +61,22 @@ services:
     restart: unless-stopped
     ports:
       - "5003:5003"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/appointment-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5003},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/appointment-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -71,11 +89,22 @@ services:
     restart: unless-stopped
     ports:
       - "5004:5004"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/admin-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5004},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/admin-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -88,14 +117,19 @@ services:
     restart: unless-stopped
     ports:
       - "5005:5005"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/telemedicine-service/.env
-      - .env
-    depends_on:
-      - mongodb
-    volumes:
-      - ./microservices/telemedicine-service:/usr/src/app
-      - /usr/src/app/node_modules
+    extra_hosts:
+      - "db.nxdrvzhlfckndjsdxfwk.supabase.co:2406:da12:b78:de0a:a26c:de8b:3e50:f7c2"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5005/api/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
     networks:
       - healthmate-network
 
@@ -105,11 +139,22 @@ services:
     restart: unless-stopped
     ports:
       - "5006:5006"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/notification-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5006},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/notification-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -122,11 +167,22 @@ services:
     restart: unless-stopped
     ports:
       - "5007:5007"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/AI-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5007},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/AI-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -139,11 +195,22 @@ services:
     restart: unless-stopped
     ports:
       - "5008:5008"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     env_file:
       - ./microservices/payment-service/.env
       - .env
-    depends_on:
-      - mongodb
+    environment:
+      NODE_OPTIONS: --dns-result-order=ipv4first
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'node -e "const net=require(\"net\");const s=net.createConnection({host:\"127.0.0.1\",port:5008},()=>{s.end();process.exit(0)});s.on(\"error\",()=>process.exit(1));setTimeout(()=>process.exit(1),2000);"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     volumes:
       - ./microservices/payment-service:/usr/src/app
       - /usr/src/app/node_modules
@@ -159,18 +226,24 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - patient-service
-      - doctor-service
-      - appointment-service
-      - admin-service
-      - notification-service
+      patient-service:
+        condition: service_healthy
+      doctor-service:
+        condition: service_healthy
+      appointment-service:
+        condition: service_healthy
+      admin-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
     networks:
       - healthmate-network
-
-volumes:
-  mongodb_data:
-
 
 networks:
   healthmate-network:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: "172.20.0.0/16"
+        - subnet: "fd00:db8:1::/64"
