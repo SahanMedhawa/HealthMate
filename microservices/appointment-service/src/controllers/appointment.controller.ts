@@ -48,11 +48,19 @@ export const createAppointment = async (req: Request, res: Response): Promise<vo
         const slotIdx = getSlotIndex(startTime, time);
         if (slotIdx < 0) { res.status(400).json({ success: false, message: "Invalid booking time" }); return; }
 
+        let consultationFee = 0;
+        try {
+            const doctorRes = await axios.get(`${DOCTOR_SERVICE_URL}/api/doctors/${doctorId}`);
+            consultationFee = doctorRes.data.doctor?.consultationFee ?? 0;
+        } catch { consultationFee = 0; }
+
         await Queue.findOneAndUpdate({ doctorId, date: nd }, { $setOnInsert: { status: "active" } }, { upsert: true, new: true });
 
         const appointment = await Appointment.create({
             patientId, patientName, patientAddress, patientContact, doctorId, doctorName,
             date: nd, time, queueNumber: slotIdx + 1, notes, status: "booked",
+            consultationFee,
+            // Payment status will be managed through PaymentTransaction reference
         });
 
         notifyAppointmentUpdate({ appointmentId: appointment._id.toString(), doctorId, patientId, action: "updated", date: nd });
@@ -60,13 +68,9 @@ export const createAppointment = async (req: Request, res: Response): Promise<vo
     } catch (error: any) { res.status(500).json({ success: false, message: "Error creating appointment", error: error.message }); }
 };
 
-export const getAppointments = async (_req: Request, res: Response): Promise<void> => {
-    try { res.status(200).json(await Appointment.find()); } catch (error) { res.status(500).json({ message: "Error fetching appointments", error }); }
-};
-
 export const getAppointmentById = async (req: Request, res: Response): Promise<void> => {
     try {
-        const appt = await Appointment.findById(req.params.id);
+        const appt = await Appointment.findById(req.params.id).populate('paymentDetails');
         if (!appt) { res.status(404).json({ message: "Appointment not found" }); return; }
         res.status(200).json(appt);
     } catch (error) { res.status(500).json({ message: "Error fetching appointment", error }); }
@@ -74,7 +78,10 @@ export const getAppointmentById = async (req: Request, res: Response): Promise<v
 
 export const updateAppointment = async (req: Request, res: Response): Promise<void> => {
     try {
-        const appt = await Appointment.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        // Prevent direct updates to payment-related fields
+        const { paymentStatus, paymentTransactionId, ...updateData } = req.body;
+        
+        const appt = await Appointment.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('paymentDetails');
         if (!appt) { res.status(404).json({ success: false, message: "Appointment not found" }); return; }
         notifyAppointmentUpdate({ appointmentId: req.params.id, doctorId: appt.doctorId?.toString(), patientId: appt.patientId?.toString(), action: "updated", date: appt.date });
         res.status(200).json({ success: true, data: appt, message: "Appointment updated successfully" });
@@ -99,7 +106,7 @@ export const cancelAppointment = async (req: Request, res: Response): Promise<vo
         if (!appt) { res.status(404).json({ success: false, message: "Appointment not found" }); return; }
         if (appt.status === "completed") { res.status(400).json({ success: false, message: "Cannot cancel completed appointment" }); return; }
         if (appt.status === "cancelled") { res.status(400).json({ success: false, message: "Already cancelled" }); return; }
-        const updated = await Appointment.findByIdAndUpdate(id, { status: "cancelled", cancellationReason: reason, cancelledBy, cancelledAt: new Date() }, { new: true });
+        const updated = await Appointment.findByIdAndUpdate(id, { status: "cancelled", cancellationReason: reason, cancelledBy, cancelledAt: new Date() }, { new: true }).populate('paymentDetails');
         notifyAppointmentUpdate({ appointmentId: id, doctorId: appt.doctorId?.toString(), patientId: appt.patientId?.toString(), action: "cancelled", date: appt.date });
         res.status(200).json({ success: true, message: "Appointment cancelled", data: updated });
     } catch (error: any) { res.status(500).json({ success: false, message: "Error cancelling", error: error.message }); }
@@ -115,7 +122,7 @@ export const rescheduleAppointment = async (req: Request, res: Response): Promis
         if (["completed", "cancelled"].includes(appt.status)) { res.status(400).json({ success: false, message: `Cannot reschedule ${appt.status} appointment` }); return; }
         const conflict = await Appointment.findOne({ doctorId: appt.doctorId, date: newDate, time: newTime, _id: { $ne: id } });
         if (conflict) { res.status(400).json({ success: false, message: "Slot already booked" }); return; }
-        const updated = await Appointment.findByIdAndUpdate(id, { date: newDate, time: newTime, rescheduledFrom: { date: appt.date, time: appt.time }, rescheduledReason: reason, rescheduledAt: new Date(), status: "booked" }, { new: true });
+        const updated = await Appointment.findByIdAndUpdate(id, { date: newDate, time: newTime, rescheduledFrom: { date: appt.date, time: appt.time }, rescheduledReason: reason, rescheduledAt: new Date(), status: "booked" }, { new: true }).populate('paymentDetails');
         notifyAppointmentUpdate({ appointmentId: id, doctorId: appt.doctorId?.toString(), patientId: appt.patientId?.toString(), action: "rescheduled", date: newDate });
         res.status(200).json({ success: true, message: "Appointment rescheduled", data: updated });
     } catch (error: any) { res.status(500).json({ success: false, message: "Error rescheduling", error: error.message }); }
@@ -124,7 +131,7 @@ export const rescheduleAppointment = async (req: Request, res: Response): Promis
 export const getAppointmentsByPatient = async (req: Request, res: Response): Promise<void> => {
     try {
         const { patientId } = req.params;
-        const appointments = await Appointment.find({ patientId }).sort({ date: -1, time: -1 });
+        const appointments = await Appointment.find({ patientId }).populate('paymentDetails').sort({ date: -1, time: -1 });
         res.status(200).json({ success: true, data: appointments || [] });
     } catch (error: any) { res.status(500).json({ success: false, message: "Error fetching appointments", error: error.message }); }
 };
@@ -133,8 +140,8 @@ export const getDoctorAppointmentsByDate = async (req: Request, res: Response): 
     try {
         const { doctorId, date } = req.params;
         const oid = new mongoose.Types.ObjectId(doctorId);
-        const appointments = await Appointment.find({ doctorId: oid, date }).sort({ queueNumber: 1 })
-            .select("_id patientId patientName patientAddress patientContact time queueNumber status notes date");
+        const appointments = await Appointment.find({ doctorId: oid, date }).populate('paymentDetails').sort({ queueNumber: 1 })
+            .select("_id patientId patientName patientAddress patientContact time queueNumber status notes date paymentTransactionId");
         res.json({ success: true, appointments });
     } catch (error) { res.status(500).json({ success: false, message: "Error", error }); }
 };
@@ -143,8 +150,110 @@ export const getDoctorAppointments = async (req: Request, res: Response): Promis
     try {
         const { doctorId } = req.params;
         const oid = new mongoose.Types.ObjectId(doctorId);
-        const appointments = await Appointment.find({ doctorId: oid }).sort({ date: -1, time: -1 })
-            .select("_id patientId patientName patientAddress patientContact time queueNumber status notes date");
+        const appointments = await Appointment.find({ doctorId: oid }).populate('paymentDetails').sort({ date: -1, time: -1 })
+            .select("_id patientId patientName patientAddress patientContact time queueNumber status notes date paymentTransactionId");
         res.json({ success: true, appointments });
     } catch (error) { res.status(500).json({ success: false, message: "Error", error }); }
+};
+
+/**
+ * Update appointment with payment transaction reference
+ * Payment status is derived from the referenced PaymentTransaction document
+ */
+export const updatePaymentStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { appointmentId } = req.params;
+        const { paymentTransactionId } = req.body;
+
+        if (!paymentTransactionId) {
+            res.status(400).json({
+                success: false,
+                message: "Payment transaction ID is required"
+            });
+            return;
+        }
+
+        const existingAppointment = await Appointment.findById(appointmentId);
+        if (!existingAppointment) {
+            res.status(404).json({
+                success: false,
+                message: "Appointment not found"
+            });
+            return;
+        }
+
+       
+        const appointment = await Appointment.findByIdAndUpdate(
+            appointmentId,
+            {
+                paymentTransactionId: paymentTransactionId,
+                status: "booked" // Keep appointment status as booked until payment is confirmed
+            },
+            { new: true }
+        ).populate('paymentDetails');
+
+        res.status(200).json({
+            success: true,
+            message: "Payment transaction linked to appointment",
+            data: {
+                appointmentId: appointment?._id,
+                paymentStatus: appointment?.paymentStatus, // Virtual field from PaymentTransaction
+                paymentTransactionId: appointment?.paymentTransactionId,
+                appointmentStatus: appointment?.status
+            }
+        });
+    } catch (error: any) {
+        console.error("Error updating payment status:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Get appointment with payment details
+ * Payment status is automatically calculated from the related PaymentTransaction
+ */
+export const getPaymentStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const { appointmentId } = req.params;
+
+        const appointment = await Appointment.findById(appointmentId)
+            .populate({
+                path: 'paymentDetails',
+                select: 'status stripePaymentIntentId amount paymentMethod billId receiptNo'
+            })
+            .populate('patientId', 'name email contact');
+
+        if (!appointment) {
+            res.status(404).json({
+                success: false,
+                message: "Appointment not found"
+            });
+            return;
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                appointmentId: appointment._id,
+                patientId: appointment.patientId,
+                appointmentStatus: appointment.status,
+                paymentStatus: appointment.paymentStatus, // Virtual field from PaymentTransaction
+                paymentTransaction: appointment.paymentDetails, // Full payment details if exists
+                consultationFee: appointment.consultationFee,
+                date: appointment.date,
+                time: appointment.time
+            }
+        });
+    } catch (error: any) {
+        console.error("Error fetching appointment with payment:", error);
+        res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: error.message
+        });
+    }
 };

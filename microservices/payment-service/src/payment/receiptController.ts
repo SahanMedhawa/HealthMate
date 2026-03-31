@@ -18,7 +18,8 @@ export const receiptController = {
         patientName, 
         services, 
         total,
-        status: "Pending"
+        status: "Pending",
+        paymentStatus: "unpaid"
       });
 
       const savedReceipt = await newReceipt.save();
@@ -55,6 +56,21 @@ export const receiptController = {
     }
   },
 
+  // 🔵 READ - Receipt by Bill ID
+  getReceiptByBillId: async (req: Request, res: Response): Promise<void> => {
+    try {
+      const receipt = await Receipt.findOne({ receiptNo: req.params.billId });
+      if (!receipt) {
+        res.status(404).json({ message: "Receipt not found" });
+        return;
+      }
+      res.status(200).json(receipt);
+    } catch (error: any) {
+      console.error(error);
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
+  },
+
   // 🔵 READ - Receipts by patient ID
   getReceiptsByPatientId: async (req: Request, res: Response): Promise<void> => {
     try {
@@ -70,7 +86,7 @@ export const receiptController = {
     }
   },
 
-  // 🟡 UPDATE Receipt
+  // 🟡 UPDATE Receipt - Full update
   updateReceipt: async (req: Request, res: Response): Promise<void> => {
     try {
       const { receiptNo, patientId, patientName, services, total, status } = req.body;
@@ -86,6 +102,39 @@ export const receiptController = {
       res.status(200).json(updatedReceipt);
     } catch (error: any) {
       console.error(error);
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
+  },
+
+  // 🟡 UPDATE Receipt Payment Status (Called by Payment Service)
+  updatePaymentStatus: async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { billId } = req.params;
+      const { status, paymentDate } = req.body;
+
+      const updatedReceipt = await Receipt.findOneAndUpdate(
+        { receiptNo: billId },
+        { 
+          status: status,
+          paymentStatus: status === "Paid" ? "paid" : "unpaid",
+          paymentDate: paymentDate || new Date(),
+          updatedAt: new Date()
+        },
+        { new: true }
+      );
+
+      if (!updatedReceipt) {
+        res.status(404).json({ message: "Receipt not found" });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Receipt payment status updated to ${status}`,
+        data: updatedReceipt
+      });
+    } catch (error: any) {
+      console.error("Error updating receipt payment status:", error);
       res.status(500).json({ message: "Server error", error: error.message });
     }
   },
