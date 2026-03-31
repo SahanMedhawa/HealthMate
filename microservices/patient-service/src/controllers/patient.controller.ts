@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import admin from "../config/firebase.js";
 import User from "../models/user.model.js";
+import { generateToken } from "../middleware/auth.middleware.js";
 
 export const firebaseLogin = async (
     req: Request,
@@ -49,10 +50,17 @@ export const firebaseLogin = async (
             await user.save();
         }
 
+        const token = generateToken({
+            id: user._id,
+            username: user.email,
+            role: user.userType || "patient",
+        });
+
         res.status(200).json({
             success: true,
             message: "Firebase login successful",
             data: {
+                token,
                 user: {
                     id: user._id,
                     name: user.name,
