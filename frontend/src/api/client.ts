@@ -14,10 +14,15 @@ const api: AxiosInstance = axios.create({
 // Intercept requests to attach Authorization token dynamically
 api.interceptors.request.use(
     (config) => {
-        // Look for both patient/doctor tokens or admin tokens
         const patientToken = localStorage.getItem("healthmate_token");
         const adminToken = localStorage.getItem("healthmate_admin_token");
-        const token = adminToken || patientToken;
+        const legacyDoctorToken = localStorage.getItem("healthmate_doctor_token");
+        const legacyToken = localStorage.getItem("token");
+
+        const isAdminRoute = config.url?.startsWith("/admin");
+        const token = isAdminRoute
+            ? (adminToken || patientToken || legacyDoctorToken || legacyToken)
+            : (patientToken || legacyDoctorToken || adminToken || legacyToken);
 
         if (token && config.headers) {
             config.headers.Authorization = `Bearer ${token}`;

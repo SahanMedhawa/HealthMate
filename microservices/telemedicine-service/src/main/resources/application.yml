@@ -1,0 +1,29 @@
+server:
+  port: ${PORT:5005}
+
+spring:
+  application:
+    name: telemedicine-service
+
+  datasource:
+    url: ${DATASOURCE_URL:jdbc:postgresql://localhost:5432/healthmate_telemedicine}
+    username: ${DATASOURCE_USERNAME:healthmate}
+    password: ${DATASOURCE_PASSWORD:healthmate_pass}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:meditrack_jwt_secret_key_2024}
+  jitsi:
+    base-url: ${JITSI_BASE_URL:https://meet.jit.si}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:3000}

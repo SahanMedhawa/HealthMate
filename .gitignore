@@ -10,3 +10,4 @@ Thumbs.db
 npm-debug.log*
 serviceAccountKey.json
 create-admin.ts
+target/
