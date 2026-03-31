@@ -24,6 +24,7 @@ import Pricing from "./pages/user/Pricing";
 import QueueStatusPage from "./pages/user/QueueStatusPage";
 import DoctorQueue from "./pages/doctor/DoctorQueue";
 import AdminQueueDashboard from "./pages/admin/AdminQueueDashboard";
+import PaymentPage from "./pages/user/paymentInterface";
 
 function App() {
   return (
@@ -49,6 +50,7 @@ function App() {
             <Route path="/doctorsdir" element={<DoctorsDirectory />} />
             <Route path="/doctors/:id/slots" element={<AvailableSlots />} />
             <Route path="/pricing" element={<Pricing />} />
+            <Route path="/payment" element={<PaymentPage />} />
             
             {/* Doctor Routes */}
             <Route path="/doctor/*" element={<DoctorLayout />}>
