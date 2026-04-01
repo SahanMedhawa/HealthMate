@@ -16,13 +16,24 @@ import {
   PencilSquareIcon,
   XMarkIcon,
   PlusIcon,
+  CurrencyDollarIcon,
+  CreditCardIcon,
+  ReceiptPercentIcon,
+  BuildingOfficeIcon,
 } from '@heroicons/react/24/outline';
 
 // Add modal state and selected appointment
 interface ModalState {
   isOpen: boolean;
-  type: 'reschedule' | 'cancel' | null;
+  type: 'reschedule' | 'cancel' | 'payment' | null;
   appointmentId: string | null;
+}
+
+interface FeeBreakdown {
+  doctorFee: number;
+  hospitalCharge: number;
+  vat: number;
+  totalFee: number;
 }
 
 interface Appointment {
@@ -34,6 +45,8 @@ interface Appointment {
   time: string;
   status: 'booked' | 'in_session' | 'completed' | 'cancelled';
   notes?: string;
+  consultationFee?: number;
+  paymentStatus?: 'pending' | 'paid' | 'failed';
 }
 
 const MyAppointments: React.FC = () => {
@@ -47,6 +60,8 @@ const MyAppointments: React.FC = () => {
     type: null,
     appointmentId: null
   });
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [feeBreakdown, setFeeBreakdown] = useState<FeeBreakdown | null>(null);
 
   useEffect(() => {
     const fetchAppointments = async () => {
@@ -103,6 +118,68 @@ const MyAppointments: React.FC = () => {
     fetchAppointments();
   }, [user]);
 
+  const calculateFeeBreakdown = (totalFee: number): FeeBreakdown => {
+    // Calculations:
+    // Total Fee = Doctor's Fee + Hospital Charge + VAT
+    // Doctor's Fee = Total Fee / 1.18
+    // Hospital Charge = (Total Fee * 0.1) / 1.18
+    // VAT = (Total Fee * 0.08) / 1.18
+    
+    const doctorFee = totalFee / 1.18;
+    const hospitalCharge = (totalFee * 0.1) / 1.18;
+    const vat = (totalFee * 0.08) / 1.18;
+    
+    return {
+      doctorFee: Math.round(doctorFee * 100) / 100,
+      hospitalCharge: Math.round(hospitalCharge * 100) / 100,
+      vat: Math.round(vat * 100) / 100,
+      totalFee: totalFee
+    };
+  };
+
+  const handlePaymentClick = (appointment: Appointment) => {
+    if (!appointment.consultationFee) {
+      console.error('No consultation fee found');
+      return;
+    }
+    
+    const breakdown = calculateFeeBreakdown(appointment.consultationFee);
+    setFeeBreakdown(breakdown);
+    setSelectedAppointment(appointment);
+    setModal({
+      isOpen: true,
+      type: 'payment',
+      appointmentId: appointment._id
+    });
+  };
+
+  const handleProceedToPay = async () => {
+    if (!selectedAppointment || !feeBreakdown) return;
+
+    try {
+      // Here you would integrate with your payment gateway
+      // For example, redirect to payment page or open payment modal
+      console.log('Processing payment for appointment:', selectedAppointment._id);
+      console.log('Amount:', feeBreakdown.totalFee);
+      
+      // Example: Redirect to payment page with appointment details
+      navigate('/payment', {
+        state: {
+          appointmentId: selectedAppointment._id,
+          amount: feeBreakdown.totalFee,
+          appointmentDetails: selectedAppointment,
+          feeBreakdown: feeBreakdown
+        }
+      });
+      
+      // Close the modal
+      setModal({ isOpen: false, type: null, appointmentId: null });
+      setSelectedAppointment(null);
+      setFeeBreakdown(null);
+    } catch (error) {
+      console.error('Error initiating payment:', error);
+    }
+  };
 
   const handleReschedule = async () => {
     if (!modal.appointmentId) return;
@@ -169,6 +246,116 @@ const MyAppointments: React.FC = () => {
   const Modal = () => {
     if (!modal.isOpen) return null;
 
+    // Payment Modal
+    if (modal.type === 'payment' && selectedAppointment && feeBreakdown) {
+      return (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full mx-auto shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-green-500 to-teal-500 p-6">
+              <h3 className="text-2xl font-bold text-white">Payment Details</h3>
+              <p className="text-green-100 mt-1">Appointment #{selectedAppointment.queueNumber}</p>
+            </div>
+            
+            <div className="p-6">
+              {/* Appointment Summary */}
+              <div className="mb-6 pb-4 border-b border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Appointment Summary</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Doctor:</span>
+                    <span className="font-medium text-gray-900">{selectedAppointment.doctorName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Date:</span>
+                    <span className="font-medium text-gray-900">
+                      {format(new Date(selectedAppointment.date), 'MMM dd, yyyy')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Time:</span>
+                    <span className="font-medium text-gray-900">{selectedAppointment.time}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fee Breakdown */}
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Fee Breakdown</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2">
+                    <div className="flex items-center space-x-2">
+                      <UserIcon className="h-5 w-5 text-blue-500" />
+                      <span className="text-gray-700">Doctor's Fee</span>
+                    </div>
+                    <span className="font-medium text-gray-900">${feeBreakdown.doctorFee.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <div className="flex items-center space-x-2">
+                      <BuildingOfficeIcon className="h-5 w-5 text-purple-500" />
+                      <span className="text-gray-700">Hospital Charge (10%)</span>
+                    </div>
+                    <span className="font-medium text-gray-900">${feeBreakdown.hospitalCharge.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <div className="flex items-center space-x-2">
+                      <ReceiptPercentIcon className="h-5 w-5 text-orange-500" />
+                      <span className="text-gray-700">VAT (8%)</span>
+                    </div>
+                    <span className="font-medium text-gray-900">${feeBreakdown.vat.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Amount */}
+              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-teal-50 rounded-xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-gray-600">Total Amount to Pay</p>
+                    <p className="text-2xl font-bold text-green-600">${feeBreakdown.totalFee.toLocaleString()}</p>
+                  </div>
+                  <CurrencyDollarIcon className="h-10 w-10 text-green-500 opacity-50" />
+                </div>
+              </div>
+
+              {/* Payment Methods */}
+              <div className="mb-6">
+                <p className="text-sm text-gray-600 mb-3">Payment Methods Accepted:</p>
+                <div className="flex space-x-3">
+                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm">💳 Credit Card</div>
+                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm">🏦 Net Banking</div>
+                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm">📱 UPI</div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    setModal({ isOpen: false, type: null, appointmentId: null });
+                    setSelectedAppointment(null);
+                    setFeeBreakdown(null);
+                  }}
+                  className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleProceedToPay}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg font-medium flex items-center justify-center space-x-2"
+                >
+                  <CreditCardIcon className="h-5 w-5" />
+                  <span>Proceed to Pay</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Reschedule/Cancel Modal
     return (
       <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50">
         <div className="bg-white/90 backdrop-filter backdrop-blur-sm rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
@@ -222,6 +409,25 @@ const MyAppointments: React.FC = () => {
       case 'cancelled': return 'text-red-600 bg-red-50 border-red-200';
       default: return 'text-gray-600 bg-gray-50 border-gray-200';
     }
+  };
+
+  const getPaymentStatusBadge = (paymentStatus?: string) => {
+    if (paymentStatus === 'paid') {
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+          <CheckCircleIcon className="h-3 w-3" />
+          <span>Paid</span>
+        </div>
+      );
+    } else if (paymentStatus === 'failed') {
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-700 rounded-lg text-xs">
+          <XCircleIcon className="h-3 w-3" />
+          <span>Payment Failed</span>
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
@@ -369,9 +575,12 @@ const MyAppointments: React.FC = () => {
 
                               {/* Appointment Details */}
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center space-x-3 mb-3">
-                                  <UserIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
-                                  <h3 className="text-xl font-semibold text-gray-900">{appointment.doctorName}</h3>
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center space-x-3">
+                                    <UserIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                                    <h3 className="text-xl font-semibold text-gray-900">{appointment.doctorName}</h3>
+                                  </div>
+                                  {getPaymentStatusBadge(appointment.paymentStatus)}
                                 </div>
 
                                 <div className="space-y-3 mb-4">
@@ -390,6 +599,19 @@ const MyAppointments: React.FC = () => {
                                     <div className="min-w-0 flex-1 text-left">
                                       <p className="text-sm text-gray-600">Time</p>
                                       <p className="font-medium text-gray-900 text-left">{appointment.time}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Consultation Fee */}
+                                  <div className="flex items-start space-x-3">
+                                    <div className="p-1.5 bg-green-100 rounded-lg">
+                                      <CurrencyDollarIcon className="h-5 w-5 text-green-600" />
+                                    </div>
+                                    <div className="min-w-0 flex-1 text-left">
+                                      <p className="text-sm text-gray-600">Consultation Fee</p>
+                                      <p className="font-semibold text-gray-900">
+                                        ${appointment.consultationFee?.toLocaleString() || '0'}
+                                      </p>
                                     </div>
                                   </div>
                                 </div>
@@ -420,6 +642,15 @@ const MyAppointments: React.FC = () => {
                             {/* Action Buttons */}
                             {appointment.status === 'booked' && (
                               <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+                                {appointment.paymentStatus !== 'paid' && (
+                                  <button
+                                    onClick={() => handlePaymentClick(appointment)}
+                                    className="flex items-center justify-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 w-full sm:w-auto font-medium"
+                                  >
+                                    <CreditCardIcon className="h-4 w-4" />
+                                    <span>Pay Now</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setModal({
                                     isOpen: true,
@@ -472,7 +703,13 @@ const MyAppointments: React.FC = () => {
                             Date & Time
                           </th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Fee
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Status
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Payment
                           </th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Notes
@@ -517,6 +754,13 @@ const MyAppointments: React.FC = () => {
                                 </div>
                               </td>
 
+                              {/* Consultation Fee */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold text-green-600">
+                                  ${appointment.consultationFee?.toLocaleString() || '0'}
+                                </div>
+                              </td>
+
                               {/* Status */}
                               <td className="px-4 py-4 whitespace-nowrap">
                                 <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-lg border ${getStatusColor(appointment.status)}`}>
@@ -525,6 +769,13 @@ const MyAppointments: React.FC = () => {
                                     {appointment.status.replace('_', ' ')}
                                   </span>
                                 </div>
+                              </td>
+
+                              {/* Payment Status */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                {getPaymentStatusBadge(appointment.paymentStatus) || (
+                                  <span className="text-gray-400 text-xs">-</span>
+                                )}
                               </td>
 
                               {/* Notes */}
