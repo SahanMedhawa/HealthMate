@@ -16,6 +16,8 @@ export interface User {
   email: string;
   userType: "patient" | "doctor";
   isVerified: boolean;
+  photoURL?: string;
+  profilePictureUrl?: string;
   fullName?: string;
   specialization?: string;
   yearsOfExperience?: number;

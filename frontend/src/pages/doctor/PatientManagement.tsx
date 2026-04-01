@@ -404,10 +404,34 @@ const PatientManagement: React.FC = () => {
                   recentAppointments.map((appointment) => (
                     <div key={appointment._id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 font-medium text-sm">
-                            {appointment.patientName.split(' ').map(n => n[0]).join('').toUpperCase()}
-                          </span>
+                        <div className="w-10 h-10 bg-blue-100 rounded-full overflow-hidden flex items-center justify-center">
+                          <img
+                            src={(() => {
+                              const patientData = patients.find((p) => p.name === appointment.patientName);
+                              return (
+                                patientData?.photoURL ||
+                                patientData?.profilePictureUrl ||
+                                `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                                  appointment.patientName
+                                )}&background=3b82f6&color=fff`
+                              );
+                            })()}
+                            alt={appointment.patientName}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = "none";
+                              const parent = target.parentElement;
+                              if (parent) {
+                                parent.textContent = appointment.patientName
+                                  .split(" ")
+                                  .map((n) => n[0])
+                                  .join("")
+                                  .toUpperCase();
+                                parent.classList.add("text-blue-600", "font-medium", "text-sm");
+                              }
+                            }}
+                          />
                         </div>
                         <div>
                           <div className="font-medium text-gray-900 text-sm">

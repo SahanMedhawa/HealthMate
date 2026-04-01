@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { format, startOfMonth, endOfMonth, addMinutes, addMonths, subMonths, isBefore, startOfToday } from "date-fns";
 import type { DoctorData } from "../../services/api";
 import Navbar from "../../components/user/Navbar";
@@ -37,13 +37,17 @@ function getSlotsForDay(
 const AvailableSlots: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const doctor: DoctorData = location.state?.doctor;
+  const { id } = useParams<{ id: string }>();
+  const stateDoctor: DoctorData | undefined = location.state?.doctor;
+  const [doctor, setDoctor] = useState<DoctorData | null>(stateDoctor || null);
   const rescheduleAppointmentId: string | null = location.state?.rescheduleAppointmentId || null;
   const existingAppointment: any = location.state?.existingAppointment || null;
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [bookedAppointments, setBookedAppointments] = useState<{ [key: string]: string[] }>({});
   const [loading, setLoading] = useState(false);
+  const [doctorLoading, setDoctorLoading] = useState(false);
+  const [doctorLoadError, setDoctorLoadError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [currentMonth, setCurrentMonth] = useState(
     new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Colombo' }))
@@ -51,6 +55,43 @@ const AvailableSlots: React.FC = () => {
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
 
   const today = startOfToday(); // Get today's date at start of day
+
+  // Always resolve doctor data from URL id to avoid stale location.state data.
+  useEffect(() => {
+    const fetchDoctorById = async () => {
+      if (!id) {
+        setDoctorLoadError("Missing doctor id.");
+        return;
+      }
+
+      setDoctorLoading(true);
+      setDoctorLoadError(null);
+
+      try {
+        const response = await api.get(`/doctors/${id}`);
+        const payload = response.data;
+        const fetchedDoctor: DoctorData | undefined =
+          payload?.doctor || payload?.data?.doctor || payload?.data;
+
+        if (!fetchedDoctor || !fetchedDoctor._id) {
+          setDoctorLoadError("Doctor details could not be loaded.");
+          return;
+        }
+
+        setDoctor({
+          ...fetchedDoctor,
+          availability: fetchedDoctor.availability || [],
+        });
+      } catch (error) {
+        console.error("Error loading doctor details:", error);
+        setDoctorLoadError("Failed to load doctor details.");
+      } finally {
+        setDoctorLoading(false);
+      }
+    };
+
+    fetchDoctorById();
+  }, [id]);
 
   // Calendar days for current month with proper week alignment
   const monthStart = startOfMonth(currentMonth);
@@ -84,14 +125,14 @@ const AvailableSlots: React.FC = () => {
 
   // Fetch booked appointments for the doctor
   const fetchBookedAppointments = async () => {
-    if (!doctor._id) return;
+    if (!doctor?._id) return;
 
     setLoading(true);
     try {
       // Fetch appointments for all available dates
       const bookedByDate: { [key: string]: string[] } = {};
 
-      for (const avail of doctor.availability) {
+      for (const avail of doctor.availability || []) {
         const dateStr = new Date(avail.date).toISOString().split('T')[0];
         try {
           const response = await api.get(`/appointment/doctor/${doctor._id}/date/${dateStr}`);
@@ -114,8 +155,9 @@ const AvailableSlots: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!doctor?._id) return;
     fetchBookedAppointments();
-  }, [doctor._id, doctor.availability, refreshTrigger]);
+  }, [doctor?._id, doctor?.availability, refreshTrigger]);
 
   // Auto-refresh every 1 second (only when page is visible and no date is selected)
   useEffect(() => {
@@ -158,14 +200,14 @@ const AvailableSlots: React.FC = () => {
   }, []);
 
   // Get available dates from doctor's availability
-  const availableDates = doctor.availability.map(a => {
+  const availableDates = (doctor?.availability || []).map(a => {
     // Use UTC parsing to avoid timezone issues
     const date = new Date(a.date);
     return date.toISOString().split('T')[0];
   });
 
   // Get slots for selected day
-  const slots = selectedDate ? getSlotsForDay(doctor.availability, selectedDate, bookedAppointments[selectedDate] || []) : [];
+  const slots = selectedDate ? getSlotsForDay(doctor?.availability || [], selectedDate, bookedAppointments[selectedDate] || []) : [];
 
   // Handle date selection with validation
   const handleDateSelection = (dateStr: string) => {
@@ -179,6 +221,26 @@ const AvailableSlots: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-white to-teal-50">
       <Navbar />
+      {doctorLoading && !doctor && (
+        <main className="flex-1 max-w-3xl mx-auto px-4 py-8">
+          <div className="text-gray-500">Loading doctor details...</div>
+        </main>
+      )}
+
+      {!doctorLoading && doctorLoadError && !doctor && (
+        <main className="flex-1 max-w-3xl mx-auto px-4 py-8">
+          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-4 mb-4">{doctorLoadError}</div>
+          <button
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg"
+            onClick={() => navigate("/doctorsdir")}
+          >
+            Back to Doctors Directory
+          </button>
+        </main>
+      )}
+
+      {doctor && (
+      <>
       <main className="flex-1 max-w-3xl mx-auto px-4 py-8">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Available Slots for {doctor.fullName}</h1>
@@ -407,6 +469,10 @@ const AvailableSlots: React.FC = () => {
           });
         }}
       />
+
+      </>
+
+      )}
 
       <Footer />
     </div>

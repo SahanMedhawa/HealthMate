@@ -23,6 +23,8 @@ import MyAppointments from "./pages/user/MyAppointments";
 import Pricing from "./pages/user/Pricing";
 import QueueStatusPage from "./pages/user/QueueStatusPage";
 import DoctorQueue from "./pages/doctor/DoctorQueue";
+import DoctorTelemedicine from "./pages/doctor/DoctorTelemedicine";
+import TelemedicinePage from "./pages/user/TelemedicinePage";
 import AdminQueueDashboard from "./pages/admin/AdminQueueDashboard";
 import PaymentPage from "./pages/user/paymentInterface";
 import Adminpayment from "./pages/admin/AdminPayment"
@@ -52,6 +54,7 @@ function App() {
             <Route path="/doctorsdir" element={<DoctorsDirectory />} />
             <Route path="/doctors/:id/slots" element={<AvailableSlots />} />
             <Route path="/pricing" element={<Pricing />} />
+            <Route path="/telemedicine" element={<TelemedicinePage />} />
             <Route path="/payment" element={<PaymentPage />} />
             
             {/* Doctor Routes */}
@@ -62,6 +65,7 @@ function App() {
               <Route path="availability" element={<DoctorAvailability />} />
               <Route path="profile" element={<DoctorProfile />} />
               <Route path="reports" element={<DoctorReports />} />
+              <Route path="telemedicine" element={<DoctorTelemedicine />} />
             </Route>
 
             {/* Legacy admin route - keep for backwards compatibility */}

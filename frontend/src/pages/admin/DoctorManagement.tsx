@@ -60,7 +60,10 @@ const DoctorManagement: React.FC = () => {
     setLoading(true);
     try {
       const res = await getDoctors();
-      setDoctors(res.data?.doctors || []);
+      //setDoctors(res.data?.doctors || []);
+      
+   // ✅ FIXED (Matches what api.ts actually returns)
+   setDoctors(res.doctors || []);
     } catch (e: any) {
       setStatus({ type: "error", message: e.message });
     } finally {
