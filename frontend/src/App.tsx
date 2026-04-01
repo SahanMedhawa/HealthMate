@@ -25,6 +25,7 @@ import QueueStatusPage from "./pages/user/QueueStatusPage";
 import DoctorQueue from "./pages/doctor/DoctorQueue";
 import AdminQueueDashboard from "./pages/admin/AdminQueueDashboard";
 import PaymentPage from "./pages/user/paymentInterface";
+import Adminpayment from "./pages/admin/AdminPayment"
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
             {/* Admin Routes */}
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin/dashboard/*" element={<AdminDashboard />} />
+            <Route path="/admin/payment" element={<Adminpayment />} />
 
             {/* User Routes */}
             <Route path="/user/home" element={<HomePage />} />

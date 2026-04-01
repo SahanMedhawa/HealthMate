@@ -9,6 +9,7 @@ import receiptRoutes from "./payment_routes/receiptRoutes.js";
 import paymentRoutes from "./payment_routes/paymentRoutes.js";
 import governmentRoutes from "./payment_routes/governmentRoutes.js";
 import insuranceRoutes from "./payment_routes/insuranceRoutes.js";
+import adminRoutes from "./payment_routes/adminRoutes.js";
 
 const app = express();
 
@@ -32,6 +33,7 @@ app.use("/api/receipts", receiptRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/government", governmentRoutes);
 app.use("/api/insurance", insuranceRoutes);
+app.use("/api/admin", adminRoutes);
 
 // ----- Health Check -----
 app.get("/api/health", (_req, res) => {

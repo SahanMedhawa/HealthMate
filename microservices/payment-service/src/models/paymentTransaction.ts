@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from "mongoose";
+import mongoose, { Schema, Document, Model } from "mongoose";
 
 export interface IPaymentTransaction extends Document {
   billId: string;
@@ -19,8 +19,18 @@ export interface IPaymentTransaction extends Document {
   // Virtual fields
   appointment?: any;
   receipt?: any;
-  // Methods
+  // Instance methods — all declared in interface
   isAppointmentPayment(): boolean;
+  isSuccessful(): boolean;
+  isPending(): boolean;
+  isFailed(): boolean;
+}
+
+// Static methods interface for the model
+export interface IPaymentTransactionModel extends Model<IPaymentTransaction> {
+  findAppointmentPayments(appointmentId: string): mongoose.Query<IPaymentTransaction[], IPaymentTransaction>;
+  findPatientPayments(patientId: string): mongoose.Query<IPaymentTransaction[], IPaymentTransaction>;
+  findSuccessfulPayments(): mongoose.Query<IPaymentTransaction[], IPaymentTransaction>;
 }
 
 const paymentTransactionSchema = new Schema<IPaymentTransaction>(
@@ -56,7 +66,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       default: "pending",
       index: true,
     },
-    // References to related entities
     appointmentId: {
       type: Schema.Types.ObjectId,
       ref: "Appointment",
@@ -102,63 +111,68 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
   }
 );
 
-// Add virtual populate for appointment
-paymentTransactionSchema.virtual('appointment', {
-  ref: 'Appointment',
-  localField: 'appointmentId',
-  foreignField: '_id',
+// Virtual populate for appointment
+paymentTransactionSchema.virtual("appointment", {
+  ref: "Appointment",
+  localField: "appointmentId",
+  foreignField: "_id",
   justOne: true,
 });
 
-// Add virtual populate for receipt
-paymentTransactionSchema.virtual('receipt', {
-  ref: 'Receipt',
-  localField: 'receiptId',
-  foreignField: '_id',
+// Virtual populate for receipt
+paymentTransactionSchema.virtual("receipt", {
+  ref: "Receipt",
+  localField: "receiptId",
+  foreignField: "_id",
   justOne: true,
 });
 
-// Instance method to check if payment is for appointment
-paymentTransactionSchema.methods.isAppointmentPayment = function(this: IPaymentTransaction): boolean {
-  return this.paymentType === 'appointment' && !!this.appointmentId;
+// Instance methods
+paymentTransactionSchema.methods.isAppointmentPayment = function (
+  this: IPaymentTransaction
+): boolean {
+  return this.paymentType === "appointment" && !!this.appointmentId;
 };
 
-// Instance method to check if payment is successful
-paymentTransactionSchema.methods.isSuccessful = function(this: IPaymentTransaction): boolean {
-  return this.status === 'succeeded';
+paymentTransactionSchema.methods.isSuccessful = function (
+  this: IPaymentTransaction
+): boolean {
+  return this.status === "succeeded";
 };
 
-// Instance method to check if payment is pending
-paymentTransactionSchema.methods.isPending = function(this: IPaymentTransaction): boolean {
-  return this.status === 'pending';
+paymentTransactionSchema.methods.isPending = function (
+  this: IPaymentTransaction
+): boolean {
+  return this.status === "pending";
 };
 
-// Instance method to check if payment failed
-paymentTransactionSchema.methods.isFailed = function(this: IPaymentTransaction): boolean {
-  return this.status === 'failed';
+paymentTransactionSchema.methods.isFailed = function (
+  this: IPaymentTransaction
+): boolean {
+  return this.status === "failed";
 };
 
-// Static method to find appointment payments
-paymentTransactionSchema.statics.findAppointmentPayments = function(appointmentId: string) {
-  return this.find({ 
-    appointmentId, 
-    paymentType: 'appointment' 
-  });
+// Static methods
+paymentTransactionSchema.statics.findAppointmentPayments = function (
+  appointmentId: string
+) {
+  return this.find({ appointmentId, paymentType: "appointment" });
 };
 
-// Static method to find patient payments
-paymentTransactionSchema.statics.findPatientPayments = function(patientId: string) {
+paymentTransactionSchema.statics.findPatientPayments = function (
+  patientId: string
+) {
   return this.find({ patientId });
 };
 
-// Static method to find successful payments
-paymentTransactionSchema.statics.findSuccessfulPayments = function() {
-  return this.find({ status: 'succeeded' });
+paymentTransactionSchema.statics.findSuccessfulPayments = function () {
+  return this.find({ status: "succeeded" });
 };
 
-const PaymentTransaction = mongoose.model<IPaymentTransaction>(
-  "PaymentTransaction",
-  paymentTransactionSchema
-);
+// Use the extended model interface so statics are typed
+const PaymentTransaction = mongoose.model<
+  IPaymentTransaction,
+  IPaymentTransactionModel
+>("PaymentTransaction", paymentTransactionSchema);
 
 export default PaymentTransaction;

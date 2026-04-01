@@ -38,6 +38,11 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ sidebarOpen, setSidebarOpen
       href: "/admin/dashboard/reports",
       icon: <ChartBarIcon className="w-5 h-5" />,
     },
+    {
+      name: "Payments",
+      href: "/admin/payment",
+      icon: <ChartBarIcon className="w-5 h-5" />,
+    }
   ];
 
   const sidebarClasses = `

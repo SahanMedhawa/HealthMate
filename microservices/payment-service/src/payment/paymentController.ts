@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Stripe from "stripe";
 import PaymentTransaction from "../models/paymentTransaction.js";
+import { receiptController } from "./receiptController.js";   // ← Only this import (fixed)
 import axios from "axios";
 import dotenv from "dotenv";
 import jwt from "jsonwebtoken";
@@ -50,20 +51,6 @@ const generateServiceToken = (): string => {
     service: true,
   };
   return jwt.sign(servicePayload, JWT_SECRET, { expiresIn: "1h" });
-};
-
-// 🔐 Extract user info from incoming request token
-const extractUserFromToken = (authHeader: string | undefined): any => {
-  try {
-    if (!authHeader) return null;
-    const token = authHeader.split(" ")[1];
-    if (!token) return null;
-    const JWT_SECRET = process.env.JWT_SECRET || "meditrack_jwt_secret_key_2024";
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
-    console.warn("⚠️ Could not extract user from token:", error instanceof Error ? error.message : "Unknown error");
-    return null;
-  }
 };
 
 export const paymentController = {
@@ -138,163 +125,169 @@ export const paymentController = {
     }
   },
 
-  // 💳 Confirm Payment
+  // 💳 Confirm Payment - Fixed Version
   confirmPayment: async (req: Request, res: Response): Promise<void> => {
-    if (!stripe) {
-      res.status(500).json({
-        message: "Payment service unavailable - Stripe not configured",
-        error: "Stripe secret key missing",
-      });
+  if (!stripe) {
+    res.status(500).json({ message: "Payment service unavailable" });
+    return;
+  }
+
+  const { paymentIntentId, paymentType, appointmentId } = req.body;
+  const urls = getServiceUrls();
+  const serviceToken = generateServiceToken();
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      res.status(400).json({ success: false, message: "Payment not completed" });
       return;
     }
 
-    const { paymentIntentId, billId, paymentType, appointmentId } = req.body;
-    const urls = getServiceUrls();
-    
-    // 🔐 Use service-to-service token instead of user token
-    const serviceToken = generateServiceToken();
-    const userInfo = extractUserFromToken(req.headers.authorization);
+    // 1. Update local transaction status
+    const transaction = await PaymentTransaction.findOneAndUpdate(
+      { stripePaymentIntentId: paymentIntentId },
+      { status: "succeeded", completedAt: new Date() },
+      { new: true }
+    );
 
-    try {
-      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (!transaction) {
+      console.error("❌ Transaction not found for ID:", paymentIntentId);
+      res.status(404).json({ message: "Transaction record not found" });
+      return;
+    }
 
-      if (paymentIntent.status !== "succeeded") {
-        res.status(400).json({
-          success: false,
-          message: "Payment not completed",
-          status: paymentIntent.status,
-        });
-        return;
-      }
+    console.log(`✅ Transaction ${paymentIntentId} updated to succeeded. MongoID: ${transaction._id}`);
 
-      // ----- UPDATE TRANSACTION FIRST -----
+    // 2. Handle Appointment Payment + Receipt Creation
+    if (paymentType === "appointment" && appointmentId) {
+      
+      let appointmentData = null;
+      let patientData = null;
+      
       try {
-        await PaymentTransaction.findOneAndUpdate(
-          { stripePaymentIntentId: paymentIntentId },
-          { status: "succeeded", completedAt: new Date() }
+        console.log(`🔄 Fetching appointment details for ${appointmentId}...`);
+        
+        const appointmentResponse = await axios.get(
+          `${urls.appointmentService}/api/appointment/${appointmentId}`,
+          { 
+            headers: { 
+              "Authorization": `Bearer ${serviceToken}`,
+              "X-Service": "payment-service",
+            }, 
+            timeout: 10000 
+          }
         );
-        console.log(`✅ Transaction ${paymentIntentId} updated to succeeded`);
-      } catch (txErr: any) {
-        console.error("❌ Failed to update transaction:", txErr.message);
+        
+        appointmentData = appointmentResponse.data;
+        
+        const patientResponse = await axios.get(
+          `${urls.userService}/api/patient/user/${appointmentData.patientId}`,
+          { 
+            headers: { 
+              "Authorization": `Bearer ${serviceToken}`,
+              "X-Service": "payment-service",
+            }, 
+            timeout: 10000 
+          }
+        );
+        
+        patientData = patientResponse.data.user || patientResponse.data;
+
+        // === CREATE RECEIPT USING CONTROLLER DIRECTLY ===
+        console.log(`🔄 Creating receipt for appointment ${appointmentId}...`);
+
+        // Create a proper request object for the receipt controller
+        const receiptRequest = {
+          body: {
+            receiptNo: `RCPT-${Date.now()}-${appointmentId.slice(-6)}`,
+            patientId: appointmentData.patientId,
+            patientName: patientData.name || patientData.fullName || "Unknown Patient",
+            services: appointmentData.services || [{ name: "Appointment Fee", cost: transaction.amount }],
+            total: transaction.amount,
+            appointmentId: appointmentId,
+            paymentIntentId: paymentIntentId,
+            transactionId: transaction._id,
+            status: "Paid",
+            paymentStatus: "paid",
+            paymentDate: new Date().toISOString()
+          },
+          params: {},
+          query: {}
+        } as Request;
+
+        // Create a response object that captures the result
+        let receiptResult: any = null;
+        const receiptResponse = {
+          status: (code: number) => ({
+            json: (data: any) => {
+              receiptResult = { status: code, data };
+              return receiptResult;
+            }
+          }),
+          json: (data: any) => {
+            receiptResult = { status: 200, data };
+            return receiptResult;
+          }
+        } as Response;
+
+        // Call the receipt controller directly
+        await receiptController.createReceipt(receiptRequest, receiptResponse);
+        
+        if (receiptResult && receiptResult.status === 201) {
+          console.log(`✅ Receipt created successfully: ${receiptResult.data._id}`);
+        } else {
+          console.log(`⚠️ Receipt creation returned status: ${receiptResult?.status}`);
+        }
+
+      } catch (err: any) {
+        console.error(`❌ Receipt creation failed:`, err.message);
+        if (err.response) {
+          console.error(`   Status: ${err.response.status} | Data:`, err.response.data);
+        }
+        // Don't fail the whole payment confirmation if receipt creation fails
+        // But log it for monitoring
       }
 
-      // ----- APPOINTMENT PAYMENT -----
-      if (paymentType === "appointment" && appointmentId) {
-        const appointmentUrl = `${urls.appointmentService}/api/appointments/${appointmentId}/payment-status`;
-        try {
-          console.log(`🔄 Updating appointment ${appointmentId} payment status...`);
-          await axios.patch(
-            appointmentUrl,
-            { 
-              paymentStatus: "Paid",
-            },
-            { 
-              headers: { 
-                "Content-Type": "application/json", 
-                "Authorization": `Bearer ${serviceToken}`,
-                "X-Service": "payment-service",
-              }, 
-              timeout: 10000 
-            }
-          );
-          console.log(`✅ Appointment ${appointmentId} payment status updated to Paid`);
-        } catch (err: any) {
-          console.error(
-            `❌ Appointment update failed:`,
-            err.response?.status,
-            err.response?.data || err.message
-          );
-        }
-
-        // Update receipt for appointment (non-fatal)
-        try {
-          console.log(`🔄 Updating receipt for appointment ${appointmentId}...`);
-          const receiptUrl = `${urls.receiptService}/api/receipts/by-appointment/${appointmentId}`;
-          await axios.patch(
-            receiptUrl,
-            { 
-              status: "Paid",
-              paymentDate: new Date().toISOString(),
-            },
-            { 
-              headers: { 
-                "Content-Type": "application/json", 
-                "Authorization": `Bearer ${serviceToken}`,
-                "X-Service": "payment-service",
-              }, 
-              timeout: 10000 
-            }
-          );
-          console.log(`✅ Receipt for appointment ${appointmentId} updated to Paid`);
-        } catch (err: any) {
-          console.warn(
-            `⚠️ Receipt update failed (non-fatal):`,
-            err.response?.status,
-            err.response?.data || err.message
-          );
-        }
-      } else if (billId) {
-        // ----- REGULAR RECEIPT PAYMENT -----
-        const receiptUrl = `${urls.receiptService}/api/receipts/${billId}`;
-        try {
-          console.log(`🔄 Updating receipt ${billId} payment status...`);
-          await axios.patch(
-            receiptUrl,
-            { 
-              status: "Paid", 
-              paymentDate: new Date().toISOString() 
-            },
-            { 
-              headers: { 
-                "Content-Type": "application/json", 
-                "Authorization": `Bearer ${serviceToken}`,
-                "X-Service": "payment-service",
-              }, 
-              timeout: 10000 
-            }
-          );
-          console.log(`✅ Receipt ${billId} updated to Paid`);
-        } catch (err: any) {
-          console.error(
-            `❌ Receipt update failed:`,
-            err.response?.status,
-            err.response?.data || err.message
-          );
-        }
+      // 3. Update appointment payment status
+      try {
+        console.log(`🔄 Updating appointment ${appointmentId} payment status...`);
+        await axios.patch(
+          `${urls.appointmentService}/api/appointment/${appointmentId}/payment-status`,
+          { 
+            paymentTransactionId: transaction._id, 
+            paymentStatus: "Paid" 
+          },
+          { 
+            headers: { 
+              "Content-Type": "application/json", 
+              "Authorization": `Bearer ${serviceToken}`,
+              "X-Service": "payment-service",
+            }, 
+            timeout: 10000 
+          }
+        );
+        console.log(`✅ Appointment ${appointmentId} updated successfully`);
+      } catch (err: any) {
+        console.error(`❌ Appointment update failed:`, err.response?.status, err.response?.data);
       }
-
-      res.json({
-        success: true,
-        message: "Payment confirmed successfully",
-        data: {
-          paymentIntentId,
-          transactionStatus: "succeeded",
-          paymentType,
-          ...(appointmentId && { appointmentId }),
-          ...(billId && { billId }),
-        },
-      });
-    } catch (err: any) {
-      console.error("Stripe payment confirmation error:", err);
-      res.status(500).json({ 
-        message: "Payment confirmation failed", 
-        error: err.message 
-      });
     }
-  },
 
-  // 🔵 Get all transactions for a patient
-  getTransactionsByPatient: async (req: Request, res: Response): Promise<void> => {
-    try {
-      const { patientId } = req.params;
-      const transactions = await PaymentTransaction.find({ patientId }).sort({ createdAt: -1 });
-      res.status(200).json(transactions);
-    } catch (error: any) {
-      console.error("Error fetching transactions:", error);
-      res.status(500).json({ message: "Server error", error: error.message });
-    }
-  },
+    // Final success response
+    res.json({
+      success: true,
+      message: "Payment confirmed successfully",
+      data: { 
+        paymentIntentId, 
+        transactionId: transaction._id 
+      },
+    });
 
+  } catch (err: any) {
+    console.error("Payment confirmation error:", err);
+    res.status(500).json({ message: "Payment confirmation failed", error: err.message });
+  }
+},
   // 🔵 Get transaction by appointment ID
   getTransactionByAppointmentId: async (req: Request, res: Response): Promise<void> => {
     try {

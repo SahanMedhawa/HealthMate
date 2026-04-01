@@ -21,8 +21,8 @@ export const adminController = {
         Receipt.countDocuments(),
         Receipt.countDocuments({ status: "Paid" }),
         Receipt.countDocuments({ status: "Pending" }),
-        Receipt.countDocuments({ status: "Claim Pending" }),
-        Receipt.countDocuments({ status: "Funding Pending" }),
+        Receipt.countDocuments({ status: "Claim Pending" }), // ✅ Fixed case
+        Receipt.countDocuments({ status: "Funding Pending" }), // ✅ Fixed case
         PaymentTransaction.countDocuments(),
         InsuranceClaim.countDocuments(),
         GovernmentFunding.countDocuments()
@@ -42,6 +42,17 @@ export const adminController = {
               $sum: { 
                 $cond: [{ $eq: ["$status", "Pending"] }, "$total", 0] 
               } 
+            },
+            // Optional: Add revenue for claim and funding pending receipts
+            claimPendingRevenue: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "Claim Pending"] }, "$total", 0]
+              }
+            },
+            fundingPendingRevenue: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "Funding Pending"] }, "$total", 0]
+              }
             }
           }
         }
@@ -58,7 +69,13 @@ export const adminController = {
         transactions: totalTransactions,
         claims: totalClaims,
         funding: totalFunding,
-        revenue: revenueStats[0] || { totalRevenue: 0, paidRevenue: 0, pendingRevenue: 0 }
+        revenue: revenueStats[0] || { 
+          totalRevenue: 0, 
+          paidRevenue: 0, 
+          pendingRevenue: 0,
+          claimPendingRevenue: 0,
+          fundingPendingRevenue: 0
+        }
       };
 
       res.status(200).json(stats);
