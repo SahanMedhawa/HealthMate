@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import axios from "axios";
-import { ruleBasedCheck } from "../utils/ruleBased";
+import { ruleBasedCheck } from "../utils/ruleBased.js";
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
 
