@@ -20,6 +20,8 @@ interface Doctor {
   _id: string;
   name: string;
   email: string;
+  photoURL?: string;
+  profilePictureUrl?: string;
   fullName?: string;
   specialization?: string;
 }
@@ -51,6 +53,8 @@ interface SystemStats {
 interface DoctorPerformance {
   doctorId: string;
   doctorName: string;
+  photoURL?: string;
+  profilePictureUrl?: string;
   specialization: string;
   totalAppointments: number;
   completedAppointments: number;
@@ -239,6 +243,8 @@ const AdminReports: React.FC = () => {
         return {
           doctorId: doctor._id,
           doctorName: doctor.fullName || doctor.name,
+          photoURL: doctor.photoURL,
+          profilePictureUrl: doctor.profilePictureUrl,
           specialization: doctor.specialization || 'N/A',
           totalAppointments: doctorAppointments.length,
           completedAppointments: doctorCompleted,
@@ -820,10 +826,25 @@ const AdminReports: React.FC = () => {
                   <tr key={doctor.doctorId} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-3">
-                        <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center">
-                          <span className="text-blue-600 font-medium text-sm">
-                            {doctor.doctorName.charAt(0).toUpperCase()}
-                          </span>
+                        <div className="flex-shrink-0 h-10 w-10 bg-blue-100 rounded-full flex items-center justify-center overflow-hidden">
+                          <img
+                            src={
+                              doctor.photoURL ||
+                              doctor.profilePictureUrl ||
+                              `https://ui-avatars.com/api/?name=${encodeURIComponent(doctor.doctorName)}&background=3b82f6&color=fff`
+                            }
+                            alt={doctor.doctorName}
+                            className="h-full w-full object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = "none";
+                              const parent = target.parentElement;
+                              if (parent) {
+                                parent.textContent = doctor.doctorName.charAt(0).toUpperCase();
+                                parent.classList.add("text-blue-600", "font-medium", "text-sm");
+                              }
+                            }}
+                          />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-baseline gap-2">

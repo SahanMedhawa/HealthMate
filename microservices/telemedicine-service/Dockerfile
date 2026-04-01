@@ -1,7 +1,15 @@
-FROM node:18-alpine
-WORKDIR /usr/src/app
-COPY package*.json ./
-RUN npm install
-COPY . .
+## ── Stage 1: build the fat JAR ──────────────────────────────────
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+## ── Stage 2: lightweight runtime image ─────────────────────────
+FROM eclipse-temurin:17-jre-alpine
+RUN apk add --no-cache curl
+WORKDIR /app
+COPY --from=build /app/target/*.jar app.jar
 EXPOSE 5005
-CMD ["npm", "run", "dev"]
+ENTRYPOINT ["java", "-jar", "app.jar"]
