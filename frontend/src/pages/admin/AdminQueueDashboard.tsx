@@ -28,6 +28,10 @@ interface QueueInfo {
   pauseReason?: string;
   createdAt: Date;
   updatedAt: Date;
+  currentInSession?: {
+    patientName: string;
+    queueNumber: number;
+  } | null;
 }
 
 interface QueueStats {
@@ -86,9 +90,10 @@ const AdminQueueDashboard: React.FC = () => {
 
       const response = await api.get('/admin/queues');
       const data = response.data;
+      const queuePayload = data?.data?.queues ? data.data : data?.data?.data;
 
       if (data.success) {
-        let filteredQueues = data.data.queues || [];
+        let filteredQueues = queuePayload?.queues || [];
 
         console.log('[AdminQueueDashboard] Raw queues from API:', filteredQueues.length);
         console.log('[AdminQueueDashboard] Selected date:', selectedDate);
@@ -120,10 +125,11 @@ const AdminQueueDashboard: React.FC = () => {
     try {
       const response = await api.get('/admin/queue-stats');
       const data = response.data;
+      const statsPayload = data?.data?.total !== undefined ? data.data : data?.data?.data;
 
       if (data.success) {
-        console.log('[AdminQueueDashboard] Received stats:', data.data);
-        setStats(data.data);
+        console.log('[AdminQueueDashboard] Received stats:', statsPayload);
+        setStats(statsPayload);
       } else {
         console.error('[AdminQueueDashboard] Failed to fetch stats:', data.message);
       }
@@ -277,7 +283,7 @@ const AdminQueueDashboard: React.FC = () => {
           ) : (
             queues.map((queue) => (
               <div key={queue._id} className="p-6 hover:bg-gray-50 transition-colors">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-3">
                     <div className="flex items-center gap-4">
                       <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${queue.status === 'active'
@@ -291,7 +297,7 @@ const AdminQueueDashboard: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="flex-1">
+                      <div className="flex-1 text-left">
                         <h4 className="text-lg font-semibold text-gray-900">
                           {queue.doctorId.fullName || queue.doctorId.name}
                         </h4>
@@ -329,6 +335,16 @@ const AdminQueueDashboard: React.FC = () => {
                         )}
                       </div>
                     )}
+
+                    <div className="ml-16 text-sm text-gray-700">
+                      {queue.currentInSession ? (
+                        <p>
+                          Current in-session patient: <span className="font-semibold">{queue.currentInSession.patientName}</span> (Queue #{queue.currentInSession.queueNumber})
+                        </p>
+                      ) : (
+                        <p>No patients currently in session</p>
+                      )}
+                    </div>
 
                     <div className="flex items-center justify-between text-xs text-gray-500 ml-16">
                       <span>Created: {formatDateTime(queue.createdAt)}</span>

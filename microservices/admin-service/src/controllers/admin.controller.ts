@@ -181,8 +181,40 @@ export const getAllAppointmentsAdmin = async (req: Request, res: Response): Prom
 
 export const getAllQueuesAdmin = async (req: Request, res: Response): Promise<void> => {
     try {
-        const r = await axios.get(`${APPOINTMENT_SERVICE_URL}/api/doctor/queue/admin/queues`);
-        res.status(200).json({ success: true, data: r.data });
+        const [queueResponse, doctorResponse] = await Promise.all([
+            axios.get(`${APPOINTMENT_SERVICE_URL}/api/doctor/queue/admin/queues`),
+            axios.get(`${DOCTOR_SERVICE_URL}/api/doctors`),
+        ]);
+
+        const rawQueues = queueResponse.data?.data?.queues || [];
+        const doctors = doctorResponse.data?.doctors || [];
+        const doctorsById = new Map<string, any>(
+            doctors.map((doctor: any) => [String(doctor._id || doctor.id), doctor])
+        );
+
+        const queues = rawQueues.map((queue: any) => {
+            const doctorRef = typeof queue.doctorId === "string"
+                ? queue.doctorId
+                : (queue.doctorId?._id || queue.doctorId?.id || "");
+            const doctor = doctorsById.get(String(doctorRef)) as any;
+
+            return {
+                ...queue,
+                doctorId: {
+                    _id: String(doctor?._id || doctor?.id || doctorRef || "unknown"),
+                    name: doctor?.name || "Unknown Doctor",
+                    fullName: doctor?.fullName || doctor?.name || "Unknown Doctor",
+                    specialization: doctor?.specialization || "Not specified",
+                },
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                queues,
+            },
+        });
     } catch (error: any) {
         res.status(error.response?.status || 500).json(error.response?.data || { success: false, message: "Failed" });
     }
@@ -191,7 +223,7 @@ export const getAllQueuesAdmin = async (req: Request, res: Response): Promise<vo
 export const getQueueStatsAdmin = async (req: Request, res: Response): Promise<void> => {
     try {
         const r = await axios.get(`${APPOINTMENT_SERVICE_URL}/api/doctor/queue/admin/queue-stats`);
-        res.status(200).json({ success: true, data: r.data });
+        res.status(200).json(r.data);
     } catch (error: any) {
         res.status(error.response?.status || 500).json(error.response?.data || { success: false, message: "Failed" });
     }

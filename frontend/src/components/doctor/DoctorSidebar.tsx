@@ -8,7 +8,8 @@ import {
   XMarkIcon,
   ClockIcon,
   UserIcon,
-  QueueListIcon
+  QueueListIcon,
+  VideoCameraIcon,
 } from "@heroicons/react/24/outline";
 
 interface DoctorSidebarProps {
@@ -36,6 +37,11 @@ const DoctorSidebar: React.FC<DoctorSidebarProps> = ({ sidebarOpen, setSidebarOp
       name: "Queue Management",
       href: "/doctor/queue",
       icon: <QueueListIcon className="w-5 h-5" />,
+    },
+    {
+      name: "Telemedicine",
+      href: "/doctor/telemedicine",
+      icon: <VideoCameraIcon className="w-5 h-5" />,
     },
     {
       name: "Availability",
