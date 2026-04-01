@@ -2,13 +2,25 @@ import { Request, Response } from "express";
 import Receipt from "../models/Receipt.js";
 
 export const receiptController = {
-  // 🟢 CREATE Receipt
+
   createReceipt: async (req: Request, res: Response): Promise<void> => {
     try {
-      const { receiptNo, patientId, patientName, services, total } = req.body;
-      
+      const { 
+        receiptNo, 
+        patientId, 
+        patientName, 
+        services, 
+        total,
+        appointmentId,
+        paymentIntentId,
+        transactionId,
+        status = "Paid",
+        paymentStatus = "paid",
+        paymentDate
+      } = req.body;
+
       if (!receiptNo || !patientId || !patientName || !services || !total) {
-        res.status(400).json({ message: "All fields are required" });
+        res.status(400).json({ message: "Missing required fields" });
         return;
       }
 
@@ -18,15 +30,25 @@ export const receiptController = {
         patientName, 
         services, 
         total,
-        status: "Pending",
-        paymentStatus: "unpaid"
+        appointmentId: appointmentId || null,
+        paymentIntentId: paymentIntentId || null,
+        paymentTransactionId: transactionId || null,
+        status,
+        paymentStatus,
+        paymentDate: paymentDate || new Date(),
       });
 
       const savedReceipt = await newReceipt.save();
+      console.log(`✅ Receipt created successfully - ID: ${savedReceipt._id}`);
+      
       res.status(201).json(savedReceipt);
     } catch (error: any) {
-      console.error("Error creating receipt:", error);
-      res.status(500).json({ message: "Server error", error: error.message });
+      console.error("❌ Receipt creation error:", error.message);
+      res.status(500).json({ 
+        success: false, 
+        message: "Failed to create receipt", 
+        error: error.message 
+      });
     }
   },
 
@@ -86,7 +108,7 @@ export const receiptController = {
     }
   },
 
-  // 🟡 UPDATE Receipt - Full update
+  // 🟡 UPDATE Receipt
   updateReceipt: async (req: Request, res: Response): Promise<void> => {
     try {
       const { receiptNo, patientId, patientName, services, total, status } = req.body;
@@ -106,7 +128,7 @@ export const receiptController = {
     }
   },
 
-  // 🟡 UPDATE Receipt Payment Status (Called by Payment Service)
+  // 🟡 UPDATE Receipt Payment Status
   updatePaymentStatus: async (req: Request, res: Response): Promise<void> => {
     try {
       const { billId } = req.params;
@@ -150,6 +172,28 @@ export const receiptController = {
       res.status(200).json({ message: "Receipt deleted successfully", deletedReceipt });
     } catch (error: any) {
       console.error(error);
+      res.status(500).json({ message: "Server error", error: error.message });
+    }
+  },
+
+  // Optional: Update by Appointment (kept for backward compatibility)
+  updateReceiptByAppointment: async (req: Request, res: Response) => {
+    try {
+      const { appointmentId } = req.params;
+      const updateData = req.body;
+
+      const updatedReceipt = await Receipt.findOneAndUpdate(
+        { appointmentId },
+        { $set: updateData },
+        { new: true }
+      );
+
+      if (!updatedReceipt) {
+        return res.status(404).json({ message: "Receipt not found for this appointment" });
+      }
+
+      res.status(200).json(updatedReceipt);
+    } catch (error: any) {
       res.status(500).json({ message: "Server error", error: error.message });
     }
   }

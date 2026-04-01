@@ -257,7 +257,7 @@ const PaymentPage: React.FC = () => {
     <div>
      <Navbar />
     <div 
-      className="text-white relative flex flex-col items-center min-h-screen py-12 px-4 sm:px-6 lg:px-8"
+      className="text-white relative flex flex-col items-center min-h-screen py-12 px-4 sm:px-6 lg:px-8 "
       style={{ background: "linear-gradient(135deg, #6e88b7 0%, #4a81df 100%)" }}
     >
       

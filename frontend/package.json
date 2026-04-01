@@ -16,7 +16,7 @@
     "@tailwindcss/vite": "^4.1.12",
     "@types/react-router-dom": "^5.3.3",
     "@types/yup": "^0.29.14",
-    "axios": "^1.11.0",
+    "axios": "^1.14.0",
     "date-fns": "^4.1.0",
     "firebase": "^12.2.1",
     "formik": "^2.4.6",
