@@ -6,12 +6,17 @@ import {
 
 const router = express.Router();
 
-router.post("/", createDiagnosis);
+// Specific routes first (before parameterized routes)
+router.get("/stats/revenue", getRevenueStats);
 router.get("/appointment/:appointmentId", getDiagnosisByAppointment);
 router.get("/doctor/:doctorId", getDiagnosesByDoctor);
 router.get("/patient/:patientId", getDiagnosesByPatient);
-router.get("/", getAllDiagnoses);
+
+// Create diagnosis
+router.post("/", createDiagnosis);
+
+// Generic routes last
 router.put("/:diagnosisId", updateDiagnosis);
-router.get("/stats/revenue", getRevenueStats);
+router.get("/", getAllDiagnoses);
 
 export default router;
