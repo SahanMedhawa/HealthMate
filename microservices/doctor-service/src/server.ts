@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 import doctorRoutes from "./routes/doctor.routes.js";
+import diagnosisRoutes from "./routes/diagnosis.routes.js";
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.use(
 app.use(express.json());
 
 app.use("/api/doctors", doctorRoutes);
+app.use("/api/diagnosis", diagnosisRoutes);
 
 app.get("/api/health", (_req, res) => {
     res.json({
