@@ -47,6 +47,7 @@ interface Appointment {
   notes?: string;
   consultationFee?: number;
   paymentStatus?: 'pending' | 'paid' | 'failed';
+  paymentTransactionId?: string;
 }
 
 const MyAppointments: React.FC = () => {
@@ -319,16 +320,6 @@ const MyAppointments: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Methods */}
-              <div className="mb-6">
-                <p className="text-sm text-gray-600 mb-3">Payment Methods Accepted:</p>
-                <div className="flex space-x-3">
-                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm">💳 Credit Card</div>
-                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm">🏦 Net Banking</div>
-                  <div className="px-3 py-2 bg-gray-100 rounded-lg text-sm">📱 UPI</div>
-                </div>
-              </div>
-
               {/* Action Buttons */}
               <div className="flex space-x-3">
                 <button
@@ -343,10 +334,25 @@ const MyAppointments: React.FC = () => {
                 </button>
                 <button
                   onClick={handleProceedToPay}
-                  className="flex-1 bg-gradient-to-r from-green-500 to-teal-500 text-white px-6 py-3 rounded-xl hover:from-green-600 hover:to-teal-600 transition-all shadow-md hover:shadow-lg font-medium flex items-center justify-center space-x-2"
+                  disabled={!!selectedAppointment?.paymentTransactionId}
+                  className={`flex-1 px-6 py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all ${
+                    selectedAppointment?.paymentTransactionId
+                      ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600 shadow-md hover:shadow-lg'
+                  }`}
+                  title={selectedAppointment?.paymentTransactionId ? 'Payment already initiated for this appointment' : ''}
                 >
-                  <CreditCardIcon className="h-5 w-5" />
-                  <span>Proceed to Pay</span>
+                  {selectedAppointment?.paymentTransactionId ? (
+                    <>
+                      <ExclamationTriangleIcon className="h-5 w-5" />
+                      <span>Payment Already Initiated</span>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCardIcon className="h-5 w-5" />
+                      <span>Proceed to Pay</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import mongoose from "mongoose";
 import Receipt from "../models/Receipt.js";
 
 export const receiptController = {
@@ -20,7 +21,19 @@ export const receiptController = {
       } = req.body;
 
       if (!receiptNo || !patientId || !patientName || !services || !total) {
-        res.status(400).json({ message: "Missing required fields" });
+        res.status(400).json({ 
+          success: false,
+          message: "Missing required fields" 
+        });
+        return;
+      }
+
+      // Validate appointmentId if provided
+      if (appointmentId && !mongoose.Types.ObjectId.isValid(appointmentId)) {
+        res.status(400).json({ 
+          success: false,
+          message: "Invalid appointmentId format." 
+        });
         return;
       }
 
@@ -44,11 +57,32 @@ export const receiptController = {
       res.status(201).json(savedReceipt);
     } catch (error: any) {
       console.error("❌ Receipt creation error:", error.message);
-      res.status(500).json({ 
-        success: false, 
-        message: "Failed to create receipt", 
-        error: error.message 
-      });
+      
+      // Handle MongoDB validation errors
+      if (error.name === "ValidationError") {
+        const messages = Object.values(error.errors).map((err: any) => err.message);
+        res.status(400).json({ 
+          success: false, 
+          message: "Validation error",
+          errors: messages
+        });
+      } 
+      // Handle BSON ObjectId cast errors
+      else if (error.name === "BSONError" || error.message.includes("Cast to ObjectId failed")) {
+        res.status(400).json({ 
+          success: false, 
+          message: "Receipt validation failed: One or more IDs are not in valid format",
+          error: error.message
+        });
+      }
+      // Handle other errors
+      else {
+        res.status(500).json({ 
+          success: false, 
+          message: "Failed to create receipt", 
+          error: error.message 
+        });
+      }
     }
   },
 

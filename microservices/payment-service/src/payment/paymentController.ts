@@ -202,7 +202,7 @@ export const paymentController = {
           body: {
             receiptNo: `RCPT-${Date.now()}-${appointmentId.slice(-6)}`,
             patientId: appointmentData.patientId,
-            patientName: patientData.name || patientData.fullName || "Unknown Patient",
+            patientName: appointmentData.patientName || "Unknown Patient",
             services: appointmentData.services || [{ name: "Appointment Fee", cost: transaction.amount }],
             total: transaction.amount,
             appointmentId: appointmentId,

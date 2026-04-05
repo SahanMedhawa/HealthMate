@@ -256,3 +256,15 @@ export const getPaymentStatus = async (req: Request, res: Response): Promise<voi
         res.status(500).json({ success: false, message: "Server error", error: error.message });
     }
 };
+
+export const getAllAppointments = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const appointments = await Appointment.find()
+            .populate('paymentTransactionId')
+            .sort({ date: -1, time: -1 });
+        
+        res.status(200).json({ success: true, data: appointments || [] });
+    } catch (error: any) {
+        res.status(500).json({ success: false, message: "Error fetching appointments", error: error.message });
+    }
+};

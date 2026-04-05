@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { HomeIcon, UsersIcon, CalendarDaysIcon, ChartBarIcon, ChevronDoubleLeftIcon, XMarkIcon, QueueListIcon } from "@heroicons/react/24/outline";
+import { HomeIcon, UsersIcon, CalendarDaysIcon, ChartBarIcon, ChevronDoubleLeftIcon, XMarkIcon, QueueListIcon, CurrencyDollarIcon } from "@heroicons/react/24/outline";
 
 interface AdminSidebarProps {
   sidebarOpen: boolean;
@@ -41,7 +41,7 @@ const AdminSidebar: React.FC<AdminSidebarProps> = ({ sidebarOpen, setSidebarOpen
     {
       name: "Payments",
       href: "/admin/payment",
-      icon: <ChartBarIcon className="w-5 h-5" />,
+      icon: <CurrencyDollarIcon className="w-5 h-5" />,
     }
   ];
 
