@@ -1,21 +1,58 @@
 import { Request, Response } from "express";
+import axios from "axios";
+import jwt from "jsonwebtoken";
 import InsuranceClaim from "../models/Insurance.js";
 import Receipt from "../models/Receipt.js";
+
+const APPOINTMENT_SERVICE_URL =
+  process.env.APPOINTMENT_SERVICE_URL || "http://appointment-service:5003";
+const SERVICE_SECRET = process.env.SERVICE_SECRET || "your-secret-key";
 
 export const insuranceController = {
   // 🏥 Create Insurance Claim
   createClaim: async (req: Request, res: Response): Promise<void> => {
     try {
+      const { billId, appointmentId, ...claimData } = req.body;
+
       const claim = new InsuranceClaim({
-        ...req.body,
+        ...claimData,
+        billId,
         status: "submitted",
       });
 
       await claim.save();
 
-      await Receipt.findByIdAndUpdate(req.body.billId, {
+      // Link paymentTransactionId to receipt
+      await Receipt.findByIdAndUpdate(billId, {
         status: "Claim Pending",
+        paymentTransactionId: claim._id,
       });
+
+      // Link insurance claim to appointment
+      if (appointmentId) {
+        try {
+          const token = jwt.sign({ service: "payment-service" }, SERVICE_SECRET);
+
+          await axios.patch(
+            `${APPOINTMENT_SERVICE_URL}/api/appointment/${appointmentId}/payment-status`,
+            {
+              paymentTransactionId: claim._id,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+        } catch (appointmentError: any) {
+          console.warn(
+            "Warning: Could not link insurance claim to appointment:",
+            appointmentError.message
+          );
+          // Don't fail the claim creation if appointment linking fails
+        }
+      }
 
       res.json({
         success: true,
