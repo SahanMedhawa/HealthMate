@@ -29,6 +29,11 @@ interface ReceiptFormProps {
   initialData?: ReceiptData;
 }
 
+// Utility function to generate a unique patient ID
+const generatePatientId = (): string => {
+  return "P-" + Math.random().toString(36).substring(2, 11).toUpperCase();
+};
+
 // Predefined service list with costs
 const serviceOptions: ServiceOption[] = [
   { name: "Consultation", cost: 2000 },
@@ -46,7 +51,7 @@ const serviceOptions: ServiceOption[] = [
 ];
 
 const ReceiptForm: React.FC<ReceiptFormProps> = ({ onSubmit, onCancel, initialData }) => {
-  const [patientId, setPatientId] = useState<string>(initialData?.patientId || "");
+  const [patientId, setPatientId] = useState<string>(initialData?.patientId || generatePatientId());
   const [patientName, setPatientName] = useState<string>(initialData?.patientName || "");
   const [services, setServices] = useState<Service[]>(
     initialData && initialData.services && initialData.services.length > 0 
@@ -101,6 +106,7 @@ const ReceiptForm: React.FC<ReceiptFormProps> = ({ onSubmit, onCancel, initialDa
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
+    
     const receiptNo = initialData?.receiptNo || "R-" + Math.floor(1000 + Math.random() * 9000);
     const total = calculateTotal();
 
@@ -153,14 +159,19 @@ const ReceiptForm: React.FC<ReceiptFormProps> = ({ onSubmit, onCancel, initialDa
               <Hash className="w-3 h-3 text-gray-500" />
               Patient ID
             </label>
-            <input
-              type="text"
-              value={patientId}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPatientId(e.target.value)}
-              required
-              placeholder="Enter patient ID"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={patientId}
+                disabled
+                className="w-full px-4 py-3 bg-gray-100 border border-gray-200 rounded-lg text-gray-500 cursor-not-allowed"
+              />
+              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                  Auto
+                </span>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -229,7 +240,7 @@ const ReceiptForm: React.FC<ReceiptFormProps> = ({ onSubmit, onCancel, initialDa
                     <option value="">Select a service</option>
                     {serviceOptions.map((option, i) => (
                       <option key={i} value={option.name}>
-                        {option.name} - Rs. {option.cost.toLocaleString()}
+                        {option.name} - $ {option.cost.toLocaleString()}
                       </option>
                     ))}
                     <option value="custom" className="font-semibold text-blue-600">
@@ -275,7 +286,7 @@ const ReceiptForm: React.FC<ReceiptFormProps> = ({ onSubmit, onCancel, initialDa
         <div className="flex items-center justify-between">
           <span className="text-lg font-semibold text-gray-700">Total Amount</span>
           <span className="text-3xl font-bold text-purple-700">
-            Rs. {calculateTotal().toLocaleString()}
+            $ {calculateTotal().toLocaleString()}
           </span>
         </div>
       </div>

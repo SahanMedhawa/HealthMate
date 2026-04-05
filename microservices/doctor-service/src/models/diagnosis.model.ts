@@ -18,7 +18,6 @@ export interface IDiagnosis extends Document {
     notes?: string;
     drugs: IDrug[];
     registrationFee: number;
-    doctorFee: number;
     drugsCost: number;
     totalAmount: number;
     prescribedAt: Date;
@@ -46,7 +45,6 @@ const diagnosisSchema = new Schema<IDiagnosis>(
         notes: { type: String, trim: true, maxlength: 2000 },
         drugs: { type: [drugSchema], default: [] },
         registrationFee: { type: Number, required: true, default: 0 },
-        doctorFee: { type: Number, required: true, min: 0 },
         drugsCost: { type: Number, required: true, default: 0, min: 0 },
         totalAmount: { type: Number, required: true, min: 0 },
         prescribedAt: { type: Date, default: Date.now },
@@ -62,7 +60,7 @@ diagnosisSchema.index({ prescribedAt: -1 });
 // Calculate totals before save
 diagnosisSchema.pre("save", function (next) {
     this.drugsCost = this.drugs.reduce((total, drug) => total + drug.price * drug.quantity, 0);
-    this.totalAmount = this.registrationFee + this.doctorFee + this.drugsCost;
+    this.totalAmount = this.registrationFee + this.drugsCost;
     next();
 });
 

@@ -8,7 +8,7 @@ const receiptSchema = new mongoose.Schema(
       unique: true, // This already creates an index - no need to index again
     },
     patientId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: String,
       required: true,
     },
     patientName: {

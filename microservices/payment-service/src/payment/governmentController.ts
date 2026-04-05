@@ -1,21 +1,58 @@
 import { Request, Response } from "express";
 import GovernmentFunding from "../models/GovermentFunding.js";
 import Receipt from "../models/Receipt.js";
+import axios from "axios";
+import jwt from "jsonwebtoken";
+
+const APPOINTMENT_SERVICE_URL =
+  process.env.APPOINTMENT_SERVICE_URL || "http://appointment-service:5003";
+const SERVICE_SECRET = process.env.SERVICE_SECRET || "your-secret-key";
 
 export const governmentController = {
   // 🏛️ Create Government Funding Request
   createFunding: async (req: Request, res: Response): Promise<void> => {
     try {
+      const { billId, appointmentId, ...fundingData } = req.body;
+
       const funding = new GovernmentFunding({
-        ...req.body,
+        ...fundingData,
+        billId,
         status: "submitted",
       });
 
       await funding.save();
 
-      await Receipt.findByIdAndUpdate(req.body.billId, {
+      // Link paymentTransactionId to receipt
+      await Receipt.findByIdAndUpdate(billId, {
         status: "Funding Pending",
+        paymentTransactionId: funding._id,
       });
+
+      // Link government funding to appointment
+      if (appointmentId) {
+        try {
+          const token = jwt.sign({ service: "payment-service" }, SERVICE_SECRET);
+
+          await axios.patch(
+            `${APPOINTMENT_SERVICE_URL}/api/appointment/${appointmentId}/payment-status`,
+            {
+              paymentTransactionId: funding._id,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            }
+          );
+        } catch (appointmentError: any) {
+          console.warn(
+            "Warning: Could not link government funding to appointment:",
+            appointmentError.message
+          );
+          // Don't fail the funding creation if appointment linking fails
+        }
+      }
 
       res.json({
         success: true,
