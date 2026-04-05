@@ -7,24 +7,24 @@ const router = express.Router();
 console.log('Payment Controller loaded:', {
   createPaymentIntent: typeof paymentController?.createPaymentIntent,
   confirmPayment: typeof paymentController?.confirmPayment,
-  getTransactionById: typeof paymentController?.getTransactionById,
-  getTransactionByBillId: typeof paymentController?.getTransactionByBillId,
+  getTransactionByAppointmentId: typeof paymentController?.getTransactionByAppointmentId,
+  //getTransactionByBillId: typeof paymentController?.getReceiptByBillId,
   updateTransaction: typeof paymentController?.updateTransaction,
   deleteTransaction: typeof paymentController?.deleteTransaction
 });
 
-// 💳 Payment Intent
+// Payment Intent
 router.post("/create-payment-intent", paymentController.createPaymentIntent);
 router.post("/confirm-payment", paymentController.confirmPayment);
 
-// 🔵 READ - Payment Transactions
-router.get("/transactions/:id", paymentController.getTransactionById);
-router.get("/transaction/:billId", paymentController.getTransactionByBillId);
+//  READ - Payment Transactions
+router.get("/transactions/:id", paymentController.getTransactionByAppointmentId);
+//router.get("/transaction/:billId", paymentController.getReceiptByBillId);
 
-// 🟡 UPDATE Payment Transaction
+// UPDATE Payment Transaction
 router.put("/transactions/:id", paymentController.updateTransaction);
 
-// 🔴 DELETE Payment Transaction
+//  DELETE Payment Transaction
 router.delete("/transactions/:id", paymentController.deleteTransaction);
 
 export default router;

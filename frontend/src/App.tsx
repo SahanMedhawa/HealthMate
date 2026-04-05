@@ -27,6 +27,8 @@ import DoctorTelemedicine from "./pages/doctor/DoctorTelemedicine";
 import TelemedicinePage from "./pages/user/TelemedicinePage";
 import AdminQueueDashboard from "./pages/admin/AdminQueueDashboard";
 import AISymptomChecker from './components/user/AISymptomChecker';
+import PaymentPage from "./pages/user/paymentInterface";
+import Adminpayment from "./pages/admin/AdminPayment"
 
 function App() {
   return (
@@ -43,6 +45,7 @@ function App() {
             {/* Admin Routes */}
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin/dashboard/*" element={<AdminDashboard />} />
+            <Route path="/admin/payment" element={<Adminpayment />} />
 
             {/* User Routes */}
             <Route path="/user/home" element={<HomePage />} />
@@ -54,6 +57,7 @@ function App() {
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/telemedicine" element={<TelemedicinePage />} />
             <Route path="/ai-checker" element={<AISymptomChecker />} />
+            <Route path="/payment" element={<PaymentPage />} />
             
             {/* Doctor Routes */}
             <Route path="/doctor/*" element={<DoctorLayout />}>

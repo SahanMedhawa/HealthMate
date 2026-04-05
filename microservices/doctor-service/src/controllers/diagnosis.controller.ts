@@ -6,8 +6,8 @@ const APPOINTMENT_SERVICE_URL = process.env.APPOINTMENT_SERVICE_URL || "http://l
 
 export const createDiagnosis = async (req: Request, res: Response): Promise<void> => {
     try {
-        const { appointmentId, patientId, doctorId, diagnosis, symptoms, notes, drugs, doctorFee } = req.body;
-        if (!appointmentId || !patientId || !doctorId || !diagnosis || !symptoms || doctorFee === undefined) {
+        const { appointmentId, patientId, doctorId, diagnosis, symptoms, notes, drugs } = req.body;
+        if (!appointmentId || !patientId || !doctorId || !diagnosis || !symptoms) {
             res.status(400).json({ success: false, message: "Missing required fields" }); return;
         }
 
@@ -17,11 +17,11 @@ export const createDiagnosis = async (req: Request, res: Response): Promise<void
         const drugsArray = drugs || [];
         const drugsCost = drugsArray.reduce((t: number, d: any) => t + d.price * d.quantity, 0);
         const registrationFee = 0;
-        const totalAmount = registrationFee + doctorFee + drugsCost;
+        const totalAmount = registrationFee + drugsCost;
 
         const newDiagnosis = new Diagnosis({
             appointmentId, patientId, doctorId, diagnosis, symptoms, notes,
-            drugs: drugsArray, registrationFee, doctorFee, drugsCost, totalAmount,
+            drugs: drugsArray, registrationFee, drugsCost, totalAmount,
             prescribedAt: new Date(),
         });
         await newDiagnosis.save();
@@ -89,7 +89,6 @@ export const getRevenueStats = async (req: Request, res: Response): Promise<void
         const stats = {
             totalDiagnoses: diagnoses.length,
             totalRegistrationFees: diagnoses.reduce((s, d) => s + d.registrationFee, 0),
-            totalDoctorFees: diagnoses.reduce((s, d) => s + d.doctorFee, 0),
             totalDrugsCost: diagnoses.reduce((s, d) => s + d.drugsCost, 0),
             totalRevenue: diagnoses.reduce((s, d) => s + d.totalAmount, 0),
             averagePerDiagnosis: diagnoses.length > 0 ? diagnoses.reduce((s, d) => s + d.totalAmount, 0) / diagnoses.length : 0,
