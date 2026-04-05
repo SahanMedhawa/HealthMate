@@ -26,6 +26,7 @@ import DoctorQueue from "./pages/doctor/DoctorQueue";
 import DoctorTelemedicine from "./pages/doctor/DoctorTelemedicine";
 import TelemedicinePage from "./pages/user/TelemedicinePage";
 import AdminQueueDashboard from "./pages/admin/AdminQueueDashboard";
+import AISymptomChecker from './components/user/AISymptomChecker';
 import PaymentPage from "./pages/user/paymentInterface";
 import Adminpayment from "./pages/admin/AdminPayment"
 
@@ -55,6 +56,7 @@ function App() {
             <Route path="/doctors/:id/slots" element={<AvailableSlots />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/telemedicine" element={<TelemedicinePage />} />
+            <Route path="/ai-checker" element={<AISymptomChecker />} />
             <Route path="/payment" element={<PaymentPage />} />
             
             {/* Doctor Routes */}
