@@ -63,12 +63,35 @@ export const getDashboardStats = async (_req: Request, res: Response): Promise<v
         // Fetch Appointments and Calculate Stats
         try {
             const r = await axios.get(`${APPOINTMENT_SERVICE_URL}/api/appointment`);
-            const allAppointments = r.data.appointments || r.data || [];
+            console.log("Appointment response structure:", { data_type: typeof r.data, is_array: Array.isArray(r.data), keys: Object.keys(r.data) });
+            
+            // Handle different response formats: { data: [...] }, { appointments: [...] }, or direct array
+            let allAppointments: any[] = [];
+            if (Array.isArray(r.data)) {
+                allAppointments = r.data;
+                console.log("Using r.data as array");
+            } else if (r.data && Array.isArray(r.data.data)) {
+                allAppointments = r.data.data;
+                console.log("Using r.data.data as array");
+            } else if (r.data && Array.isArray(r.data.appointments)) {
+                allAppointments = r.data.appointments;
+                console.log("Using r.data.appointments as array");
+            } else {
+                console.warn("Unexpected appointment response format:", r.data);
+                allAppointments = [];
+            }
 
-            appointmentStats.total = allAppointments.length;
-            appointmentStats.pending = allAppointments.filter((x: any) => x.status === "booked").length;
-            appointmentStats.completed = allAppointments.filter((x: any) => x.status === "completed").length;
-            appointmentStats.cancelled = allAppointments.filter((x: any) => x.status === "cancelled").length;
+            // Ensure allAppointments is always an array BEFORE using array methods
+            if (!Array.isArray(allAppointments)) {
+                console.error("allAppointments is not an array! Type:", typeof allAppointments, "Value:", allAppointments);
+                allAppointments = [];
+            }
+
+            // Now safe to use array methods
+            appointmentStats.total = (allAppointments && allAppointments.length) ? allAppointments.length : 0;
+            appointmentStats.pending = (allAppointments && allAppointments.length) ? allAppointments.filter((x: any) => x.status === "booked").length : 0;
+            appointmentStats.completed = (allAppointments && allAppointments.length) ? allAppointments.filter((x: any) => x.status === "completed").length : 0;
+            appointmentStats.cancelled = (allAppointments && allAppointments.length) ? allAppointments.filter((x: any) => x.status === "cancelled").length : 0;
 
             const now = new Date();
             const todayStr = now.toISOString().split('T')[0];
@@ -146,19 +169,41 @@ export const getAllAppointmentsAdmin = async (req: Request, res: Response): Prom
         const lNum = Number(limit);
 
         const r = await axios.get(`${APPOINTMENT_SERVICE_URL}/api/appointment`);
-        let appointments = r.data || [];
+        console.log("GetAllAppointmentsAdmin response structure:", { data_type: typeof r.data, is_array: Array.isArray(r.data), keys: (r.data && typeof r.data === 'object') ? Object.keys(r.data) : 'N/A' });
+        
+        // Handle different response formats: { data: [...] }, { appointments: [...] }, or direct array
+        let appointments: any[] = [];
+        if (Array.isArray(r.data)) {
+            appointments = r.data;
+            console.log("Using r.data as array");
+        } else if (r.data && typeof r.data === 'object' && Array.isArray(r.data.data)) {
+            appointments = r.data.data;
+            console.log("Using r.data.data as array");
+        } else if (r.data && typeof r.data === 'object' && Array.isArray(r.data.appointments)) {
+            appointments = r.data.appointments;
+            console.log("Using r.data.appointments as array");
+        } else {
+            console.warn("Unexpected appointments response format:", r.data);
+            appointments = [];
+        }
+
+        // Ensure appointments is always an array BEFORE using array methods
+        if (!Array.isArray(appointments)) {
+            console.error("appointments is not an array! Type:", typeof appointments, "Value:", appointments);
+            appointments = [];
+        }
 
         // Apply filters locally if sub-service doesn't support them yet
-        if (status && status !== "all") {
+        if (status && status !== "all" && appointments.length > 0) {
             appointments = appointments.filter((a: any) => a.status === status);
         }
-        if (date) {
+        if (date && appointments.length > 0) {
             appointments = appointments.filter((a: any) => a.date === date);
         }
 
         const total = appointments.length;
         const totalPages = Math.ceil(total / lNum) || 1;
-        const sliced = appointments.slice((pNum - 1) * lNum, pNum * lNum);
+        const sliced = appointments && Array.isArray(appointments) ? appointments.slice((pNum - 1) * lNum, pNum * lNum) : [];
 
         res.status(200).json({
             success: true,

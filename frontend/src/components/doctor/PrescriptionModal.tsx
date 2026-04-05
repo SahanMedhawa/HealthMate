@@ -24,7 +24,6 @@ export interface PrescriptionData {
   symptoms: string;
   notes: string;
   drugs: Drug[];
-  doctorFee: number;
 }
 
 const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
@@ -40,7 +39,6 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
     symptoms: '',
     notes: '',
     drugs: [],
-    doctorFee: 2000, // Default doctor fee in LKR
   });
 
   const [currentDrug, setCurrentDrug] = useState<Drug>({
@@ -96,7 +94,7 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
 
   const calculateTotal = () => {
     const drugsCost = formData.drugs.reduce((sum, drug) => sum + (drug.price * drug.quantity), 0);
-    return formData.doctorFee + drugsCost;
+    return drugsCost;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,7 +107,6 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
           doctorId,
           diagnosis: formData.diagnosis,
           symptoms: formData.symptoms,
-          doctorFee: formData.doctorFee,
           drugsCount: formData.drugs.length
         });
 
@@ -124,7 +121,6 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
           symptoms: formData.symptoms,
           notes: formData.notes,
           drugs: formData.drugs,
-          doctorFee: formData.doctorFee,
         });
         
         console.log('Diagnosis created successfully:', result);
@@ -135,7 +131,6 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
           symptoms: '',
           notes: '',
           drugs: [],
-          doctorFee: 2000,
         });
         
         onSuccess();
@@ -223,20 +218,7 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
                 />
               </div>
 
-              {/* Doctor Fee */}
-              <div className="bg-blue-50 rounded-lg p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Doctor Consultation Fee (LKR) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  value={formData.doctorFee}
-                  onChange={(e) => setFormData({ ...formData, doctorFee: Number(e.target.value) })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  min="0"
-                  required
-                />
-              </div>
+
 
               {/* Add Drug Section */}
               <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
@@ -406,10 +388,6 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
               <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg p-6 border border-emerald-200">
                 <h4 className="font-semibold text-gray-900 mb-4">Cost Summary</h4>
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Doctor Consultation:</span>
-                    <span className="font-medium">LKR {formData.doctorFee.toFixed(2)}</span>
-                  </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Medications ({formData.drugs.length} items):</span>
                     <span className="font-medium">

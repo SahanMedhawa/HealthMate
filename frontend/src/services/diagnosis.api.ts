@@ -32,7 +32,6 @@ export interface Diagnosis {
   notes?: string;
   drugs: Drug[];
   registrationFee: number;
-  doctorFee: number;
   drugsCost: number;
   totalAmount: number;
   prescribedAt: Date;
@@ -48,13 +47,11 @@ export interface CreateDiagnosisData {
   symptoms: string;
   notes?: string;
   drugs: Drug[];
-  doctorFee: number;
 }
 
 export interface RevenueStats {
   totalRevenue: number;
   totalRegistrationFees: number;
-  totalDoctorFees: number;
   totalDrugsCost: number;
   totalDiagnoses: number;
   averagePerDiagnosis: number;
