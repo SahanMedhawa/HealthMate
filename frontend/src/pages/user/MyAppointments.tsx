@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/user/Navbar';
 import Footer from '../../components/Footer';
 import api from '../../api/client';
+import { paymentApi } from '../../services/payment.api';
 import {
   CalendarDaysIcon,
   ClockIcon,
@@ -20,12 +21,14 @@ import {
   CreditCardIcon,
   ReceiptPercentIcon,
   BuildingOfficeIcon,
+  ShieldCheckIcon,
+  HomeIcon,
 } from '@heroicons/react/24/outline';
 
 // Add modal state and selected appointment
 interface ModalState {
   isOpen: boolean;
-  type: 'reschedule' | 'cancel' | 'payment' | null;
+  type: 'reschedule' | 'cancel' | 'payment' | 'prescription' | null;
   appointmentId: string | null;
 }
 
@@ -34,6 +37,33 @@ interface FeeBreakdown {
   hospitalCharge: number;
   vat: number;
   totalFee: number;
+}
+
+interface PaymentTransaction {
+  _id?: string;
+  amount: number;
+  status: 'pending' | 'succeeded' | 'failed';
+  stripePaymentIntentId?: string;
+  createdAt?: string;
+  paymentMethod?: 'card' | 'insurance' | 'government';
+}
+
+interface Prescription {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  quantity: number;
+  price: number;
+}
+
+interface Diagnosis {
+  _id?: string;
+  appointmentId: string;
+  symptoms?: string;
+  diagnosis?: string;
+  drugs?: Prescription[];
+  notes?: string;
 }
 
 interface Appointment {
@@ -47,7 +77,8 @@ interface Appointment {
   notes?: string;
   consultationFee?: number;
   paymentStatus?: 'pending' | 'paid' | 'failed';
-  paymentTransactionId?: string;
+  paymentTransactionId?: string | PaymentTransaction;
+  diagnosis?: Diagnosis;
 }
 
 const MyAppointments: React.FC = () => {
@@ -63,6 +94,8 @@ const MyAppointments: React.FC = () => {
   });
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [feeBreakdown, setFeeBreakdown] = useState<FeeBreakdown | null>(null);
+  const [selectedDiagnosis, setSelectedDiagnosis] = useState<Diagnosis | null>(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
 
   useEffect(() => {
     const fetchAppointments = async () => {
@@ -89,22 +122,36 @@ const MyAppointments: React.FC = () => {
           setError(data.message || 'Failed to fetch appointments');
           setAppointments([]);
         } else {
-          // Sort appointments by date (oldest first) and then by time
-          const sortedAppointments = (data.data || []).sort((a: Appointment, b: Appointment) => {
+          // Sort appointments by date (newest first) and then by time (latest first)
+          let sortedAppointments = (data.data || []).sort((a: Appointment, b: Appointment) => {
             const dateA = new Date(a.date);
             const dateB = new Date(b.date);
 
-            // First sort by date (oldest first)
+            // First sort by date (newest first)
             if (dateA.getTime() !== dateB.getTime()) {
-              return dateA.getTime() - dateB.getTime();
+              return dateB.getTime() - dateA.getTime();
             }
 
-            // If same date, sort by time (earliest first)
-            return a.time.localeCompare(b.time);
+            // If same date, sort by time (latest first)
+            return b.time.localeCompare(a.time);
           });
 
+              // Fetch diagnosis/prescription data for each appointment
+          sortedAppointments = await Promise.all(
+            sortedAppointments.map(async (appointment: Appointment) => {
+              try {
+                const diagnosisResponse = await api.get(`/diagnosis/appointment/${appointment._id}`);
+                if (diagnosisResponse.data?.data) {
+                  appointment.diagnosis = diagnosisResponse.data.data;
+                }
+              } catch (err) {
+                console.warn(`No diagnosis data for appointment ${appointment._id}`);
+              }
+              return appointment;
+            })
+          );
+
           console.log('Fetched appointments:', sortedAppointments);
-          console.log('First appointment doctorId:', sortedAppointments[0]?.doctorId);
           setAppointments(sortedAppointments);
         }
       } catch (error: any) {
@@ -225,16 +272,30 @@ const MyAppointments: React.FC = () => {
   };
 
   const handleCancel = async () => {
-    if (!modal.appointmentId) return;
+    console.log('handleCancel called with modal:', modal);
+    if (!modal.appointmentId) {
+      console.log('No appointmentId found, returning');
+      return;
+    }
 
     try {
+      console.log('Sending delete request to /appointment/' + modal.appointmentId);
       const response = await api.delete(`/appointment/${modal.appointmentId}`);
       const data = response.data;
+      console.log('Delete response:', data);
 
       if (data.success) {
-        // Close modal and refresh appointments
+        console.log('Successfully cancelled, updating state');
+        // Update appointments state immediately without reloading
+        setAppointments(prevAppointments =>
+          prevAppointments.map(apt =>
+            apt._id === modal.appointmentId
+              ? { ...apt, status: 'cancelled' as const }
+              : apt
+          )
+        );
+        // Close modal
         setModal({ isOpen: false, type: null, appointmentId: null });
-        window.location.reload();
       } else {
         console.error('Failed to cancel appointment:', data.message);
       }
@@ -320,7 +381,8 @@ const MyAppointments: React.FC = () => {
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* 
+              Action Buttons */}
               <div className="flex space-x-3">
                 <button
                   onClick={() => {
@@ -361,6 +423,89 @@ const MyAppointments: React.FC = () => {
       );
     }
 
+    // Prescription Modal
+    if (modal.type === 'prescription' && selectedPrescription && selectedDiagnosis) {
+      return (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full mx-auto shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6">
+              <h3 className="text-2xl font-bold text-white">Prescription Details</h3>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Medicine Information */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Medicine</h4>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-gray-600">Medicine Name</p>
+                    <p className="text-lg font-semibold text-gray-900">{selectedPrescription.name}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Dosage</p>
+                      <p className="font-medium text-gray-900">{selectedPrescription.dosage}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Frequency</p>
+                      <p className="font-medium text-gray-900">{selectedPrescription.frequency}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Duration & Quantity */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Usage & Quantity</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Duration</p>
+                    <p className="font-medium text-gray-900">{selectedPrescription.duration}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Quantity</p>
+                    <p className="font-medium text-gray-900">{selectedPrescription.quantity} units</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Price */}
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-gray-600">Price per unit</p>
+                  <p className="text-lg font-semibold text-blue-600">${selectedPrescription.price.toLocaleString()}</p>
+                </div>
+                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
+                  <p className="text-sm font-semibold text-gray-700">Total for this medicine</p>
+                  <p className="text-xl font-bold text-blue-600">${(selectedPrescription.price * selectedPrescription.quantity).toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Diagnosis Info */}
+              {selectedDiagnosis?.diagnosis && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase mb-2">Diagnosis</h4>
+                  <p className="text-sm text-gray-700">{selectedDiagnosis.diagnosis}</p>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setModal({ isOpen: false, type: null, appointmentId: null });
+                  setSelectedPrescription(null);
+                  setSelectedDiagnosis(null);
+                }}
+                className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     // Reschedule/Cancel Modal
     return (
       <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50">
@@ -383,7 +528,16 @@ const MyAppointments: React.FC = () => {
               No, Keep it
             </button>
             <button
-              onClick={modal.type === 'reschedule' ? handleReschedule : handleCancel}
+              onClick={async () => {
+                console.log('Button clicked - modal.type:', modal.type);
+                if (modal.type === 'reschedule') {
+                  console.log('Calling handleReschedule');
+                  await handleReschedule();
+                } else {
+                  console.log('Calling handleCancel');
+                  await handleCancel();
+                }
+              }}
               className={`px-4 py-2 text-white rounded-lg transition-colors ${modal.type === 'reschedule'
                 ? 'bg-blue-600 hover:bg-blue-700'
                 : 'bg-red-600 hover:bg-red-700'
@@ -418,14 +572,23 @@ const MyAppointments: React.FC = () => {
   };
 
   const getPaymentStatusBadge = (paymentStatus?: string) => {
-    if (paymentStatus === 'paid') {
+    const status = paymentStatus?.toLowerCase().replace('succeeded', 'paid');
+    
+    if (status === 'paid') {
       return (
         <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
           <CheckCircleIcon className="h-3 w-3" />
           <span>Paid</span>
         </div>
       );
-    } else if (paymentStatus === 'failed') {
+    } else if (status === 'pending') {
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs">
+          <ExclamationTriangleIcon className="h-3 w-3" />
+          <span>Pending</span>
+        </div>
+      );
+    } else if (status === 'failed') {
       return (
         <div className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-700 rounded-lg text-xs">
           <XCircleIcon className="h-3 w-3" />
@@ -689,8 +852,8 @@ const MyAppointments: React.FC = () => {
               </div>
             )}
 
-            {/* Completed Appointments History */}
-            {appointments.filter(a => a.status === 'completed' || a.status === 'cancelled').length > 0 && (
+            {/* All Appointments History */}
+            {appointments.length > 0 && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Appointment History</h2>
 
@@ -714,8 +877,9 @@ const MyAppointments: React.FC = () => {
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Status
                           </th>
+                        
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
-                            Payment
+                            Prescriptions
                           </th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Notes
@@ -724,7 +888,6 @@ const MyAppointments: React.FC = () => {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-100">
                         {appointments
-                          .filter(a => a.status === 'completed' || a.status === 'cancelled')
                           .map((appointment) => (
                             <tr key={appointment._id} className="hover:bg-gray-50 transition-colors duration-200">
                               {/* Queue Number */}
@@ -777,9 +940,35 @@ const MyAppointments: React.FC = () => {
                                 </div>
                               </td>
 
-                              {/* Payment Status */}
-                              <td className="px-4 py-4 whitespace-nowrap">
-                                {getPaymentStatusBadge(appointment.paymentStatus) || (
+                              
+
+                              {/* Prescriptions */}
+                              <td className="px-4 py-4">
+                                {appointment.diagnosis?.drugs && appointment.diagnosis.drugs.length > 0 ? (
+                                  <div className="text-xs space-y-2 max-w-sm">
+                                    {appointment.diagnosis.drugs.map((drug, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => {
+                                          setSelectedDiagnosis(appointment.diagnosis!);
+                                          setSelectedPrescription(drug);
+                                          setModal({
+                                            isOpen: true,
+                                            type: 'prescription',
+                                            appointmentId: appointment._id
+                                          });
+                                        }}
+                                        className="w-full text-left bg-blue-50 border border-blue-200 rounded p-2 hover:bg-blue-100 hover:border-blue-300 transition-colors cursor-pointer"
+                                      >
+                                        <div className="font-semibold text-blue-900">{drug.name}</div>
+                                        <div className="text-blue-700">{drug.dosage} • {drug.frequency}</div>
+                                        {drug.duration && (
+                                          <div className="text-blue-600 text-xs mt-1">Duration: {drug.duration}</div>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
                                   <span className="text-gray-400 text-xs">-</span>
                                 )}
                               </td>
@@ -812,7 +1001,7 @@ const MyAppointments: React.FC = () => {
       </main>
 
       <Footer />
-      <Modal />
+      {modal.isOpen && <Modal />}
     </div>
   );
 };
