@@ -51,3 +51,15 @@ export interface ConfirmPaymentResponse {
   success: boolean;
   message?: string;
 }
+
+export interface PaymentRecord {
+  _id?: string;
+  type: 'receipt' | 'insurance' | 'government' | 'stripe' | 'other';
+  amount?: number;
+  status?: string;
+  createdAt?: string;
+  receiptNo?: string;
+  billId?: string;
+  provider?: string;
+  raw?: any;
+}
