@@ -197,7 +197,7 @@ const AdminReports: React.FC = () => {
     } catch (error) {
       console.error('Error fetching system revenue stats:', error);
       // Fallback to estimated revenue if diagnosis data not available
-      systemRevenue = completedAppointments * 3000; // 1000 registration + ~2000 average doctor fee
+      systemRevenue = completedAppointments * 10; // 1000 registration + ~2000 average doctor fee
       console.log('Using fallback revenue:', systemRevenue);
     }
 
@@ -245,11 +245,11 @@ const AdminReports: React.FC = () => {
             endDate: format(endDate, 'yyyy-MM-dd'),
           });
           doctorRevenue = revenueStats.totalRevenue;
-          console.log(`  Doctor revenue: LKR ${doctorRevenue}`);
+          console.log(`  Doctor revenue: USD ${doctorRevenue}`);
         } catch (error) {
           console.error(`Error fetching revenue for doctor ${doctor._id}:`, error);
-          doctorRevenue = doctorCompleted * 3000; // Fallback
-          console.log(`  Using fallback doctor revenue: LKR ${doctorRevenue}`);
+          doctorRevenue = doctorCompleted * 10; // Fallback
+          console.log(`  Using fallback doctor revenue: USD ${doctorRevenue}`);
         }
 
         const doctorCompletionRate = doctorAppointments.length > 0
@@ -320,16 +320,16 @@ const AdminReports: React.FC = () => {
     yPosition += 10;
 
     const revenueMetrics = [
-      ['Total System Revenue', `LKR ${systemStats.systemRevenue.toLocaleString()}`],
-      ['Revenue Per Appointment', `LKR ${(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)}`],
-      ['Revenue Per Doctor (Avg)', `LKR ${(systemStats.systemRevenue / Math.max(systemStats.totalDoctors, 1)).toFixed(0)}`],
-      ['Lost Due to Cancellations', `LKR ${(systemStats.cancelledAppointments * 3000).toLocaleString()}`],
-      ['Potential Revenue', `LKR ${((systemStats.totalAppointments - systemStats.cancelledAppointments) * 3000).toLocaleString()}`],
+      ['Total System Revenue', `USD ${systemStats.systemRevenue.toLocaleString()}`],
+      ['Revenue Per Appointment', `USD ${(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)}`],
+      ['Revenue Per Doctor (Avg)', `USD ${(systemStats.systemRevenue / Math.max(systemStats.totalDoctors, 1)).toFixed(0)}`],
+      ['Lost Due to Cancellations', `USD ${(systemStats.cancelledAppointments * 3000).toLocaleString()}`],
+      ['Potential Revenue', `USD ${((systemStats.totalAppointments - systemStats.cancelledAppointments) * 3000).toLocaleString()}`],
     ];
 
     autoTable(doc, {
       startY: yPosition,
-      head: [['Metric', 'Amount (LKR)']],
+      head: [['Metric', 'Amount (USD)']],
       body: revenueMetrics,
       theme: 'grid',
       headStyles: { fillColor: [16, 185, 129], textColor: 255, fontStyle: 'bold' },
@@ -352,7 +352,7 @@ const AdminReports: React.FC = () => {
       perf.doctorName,
       perf.specialization,
       perf.completedAppointments.toString(),
-      `LKR ${perf.revenue.toLocaleString()}`,
+      `USD ${perf.revenue.toLocaleString()}`,
       `${((perf.revenue / Math.max(systemStats.systemRevenue, 1)) * 100).toFixed(1)}%`
     ]);
 
@@ -391,11 +391,11 @@ const AdminReports: React.FC = () => {
     doc.setTextColor(0, 0, 0);
 
     const insights = [
-      `Total revenue generated: LKR ${systemStats.systemRevenue.toLocaleString()}`,
-      `Average revenue per completed appointment: LKR ${(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)}`,
+      `Total revenue generated: USD ${systemStats.systemRevenue.toLocaleString()}`,
+      `Average revenue per completed appointment: USD ${(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)}`,
       `${systemStats.totalDoctors} active doctors contributing to system revenue`,
-      `Top earning doctor: ${systemStats.doctorPerformance[0]?.doctorName || 'N/A'} (LKR ${systemStats.doctorPerformance[0]?.revenue.toLocaleString() || '0'})`,
-      `Lost revenue due to ${systemStats.cancelledAppointments} cancellations: LKR ${(systemStats.cancelledAppointments * 3000).toLocaleString()}`,
+      `Top earning doctor: ${systemStats.doctorPerformance[0]?.doctorName || 'N/A'} (USD ${systemStats.doctorPerformance[0]?.revenue.toLocaleString() || '0'})`,
+      `Lost revenue due to ${systemStats.cancelledAppointments} cancellations: USD ${(systemStats.cancelledAppointments * 3000).toLocaleString()}`,
     ];
 
     insights.forEach((insight) => {
@@ -462,7 +462,7 @@ const AdminReports: React.FC = () => {
       ['Total Appointments', systemStats.totalAppointments.toString()],
       ['Completed Appointments', systemStats.completedAppointments.toString()],
       ['Cancelled Appointments', systemStats.cancelledAppointments.toString()],
-      ['System Revenue', `LKR ${systemStats.systemRevenue.toLocaleString()}`],
+      ['System Revenue', `USD ${systemStats.systemRevenue.toLocaleString()}`],
       ['Completion Rate', `${systemStats.completionRate.toFixed(1)}%`],
       ['Cancellation Rate', `${systemStats.cancellationRate.toFixed(1)}%`],
       ['Avg Appointments/Doctor', systemStats.avgAppointmentsPerDoctor.toFixed(1)],
@@ -500,7 +500,7 @@ const AdminReports: React.FC = () => {
       perf.totalAppointments.toString(),
       perf.completedAppointments.toString(),
       perf.uniquePatients.toString(),
-      `LKR ${perf.revenue.toLocaleString()}`,
+      `USD ${perf.revenue.toLocaleString()}`,
       `${perf.completionRate.toFixed(1)}%`
     ]);
 
@@ -745,7 +745,7 @@ const AdminReports: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">System Revenue</p>
-                  <p className="text-3xl font-bold text-emerald-600 mt-2">LKR {systemStats.systemRevenue.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-emerald-600 mt-2">USD {systemStats.systemRevenue.toLocaleString()}</p>
                 </div>
                 <div className="p-3 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl">
                   <BanknotesIcon className="h-6 w-6 text-white" />
@@ -753,7 +753,7 @@ const AdminReports: React.FC = () => {
               </div>
               <div className="mt-4 flex items-center text-sm">
                 <span className="text-gray-600">
-                  LKR {(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)} per appointment
+                  USD {(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)} per appointment
                 </span>
               </div>
             </div>
@@ -883,7 +883,7 @@ const AdminReports: React.FC = () => {
                       <span className="text-sm text-gray-900">{doctor.uniquePatients}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      <span className="text-sm font-semibold text-emerald-600">LKR {doctor.revenue.toLocaleString()}</span>
+                      <span className="text-sm font-semibold text-emerald-600">USD {doctor.revenue.toLocaleString()}</span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${doctor.completionRate >= 90 ? 'bg-green-100 text-green-800' :
@@ -975,27 +975,27 @@ const AdminReports: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-lg p-6 text-white">
               <p className="text-emerald-100 text-sm mb-2">Total System Revenue</p>
-              <p className="text-4xl font-bold">LKR {systemStats.systemRevenue.toLocaleString()}</p>
+              <p className="text-4xl font-bold">USD {systemStats.systemRevenue.toLocaleString()}</p>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
               <p className="text-gray-600 text-sm mb-2">Per Appointment</p>
               <p className="text-3xl font-bold text-gray-900">
-                LKR {(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)}
+                USD {(systemStats.systemRevenue / Math.max(systemStats.completedAppointments, 1)).toFixed(0)}
               </p>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
               <p className="text-gray-600 text-sm mb-2">Per Doctor (Avg)</p>
               <p className="text-3xl font-bold text-blue-600">
-                LKR {(systemStats.systemRevenue / Math.max(systemStats.totalDoctors, 1)).toFixed(0)}
+                USD {(systemStats.systemRevenue / Math.max(systemStats.totalDoctors, 1)).toFixed(0)}
               </p>
             </div>
 
             <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-6">
               <p className="text-gray-600 text-sm mb-2">Lost Revenue</p>
               <p className="text-3xl font-bold text-red-600">
-                LKR {(systemStats.cancelledAppointments * 3000).toLocaleString()}
+                USD {(systemStats.cancelledAppointments * 3000).toLocaleString()}
               </p>
             </div>
           </div>
@@ -1015,7 +1015,7 @@ const AdminReports: React.FC = () => {
                         <span className="font-medium text-gray-900">{doctor.doctorName}</span>
                         <span className="text-gray-500">({doctor.specialization})</span>
                       </div>
-                      <span className="font-bold text-emerald-600">LKR {doctor.revenue.toLocaleString()}</span>
+                      <span className="font-bold text-emerald-600">USD {doctor.revenue.toLocaleString()}</span>
                     </div>
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
@@ -1116,7 +1116,7 @@ const AdminReports: React.FC = () => {
                       <div className="mt-4 space-y-2">
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Revenue:</span>
-                          <span className="font-semibold text-emerald-600">LKR {topRevenueDoctor.revenue.toLocaleString()}</span>
+                          <span className="font-semibold text-emerald-600">USD {topRevenueDoctor.revenue.toLocaleString()}</span>
                         </div>
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Completed:</span>
