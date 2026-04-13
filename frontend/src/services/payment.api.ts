@@ -72,4 +72,28 @@ export const paymentApi = {
     }
     return response.json();
   },
+
+  getReceiptsByPatient: async (patientId: string) => {
+    const response = await fetch(`${API_BASE}/receipts/patient/${patientId}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch receipts for patient');
+    }
+    return response.json();
+  },
+
+  getInsuranceClaimsByAppointment: async (appointmentId: string) => {
+    const response = await fetch(`${API_BASE}/insurance/appointment/${appointmentId}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch insurance claims');
+    }
+    return response.json();
+  },
+
+  getGovernmentFundingByAppointment: async (appointmentId: string) => {
+    const response = await fetch(`${API_BASE}/government/appointment/${appointmentId}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch government funding');
+    }
+    return response.json();
+  },
 };
