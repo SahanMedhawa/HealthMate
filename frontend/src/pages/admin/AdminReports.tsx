@@ -135,7 +135,23 @@ const AdminReports: React.FC = () => {
 
       // Fetch all appointments
       const appointmentsResponse = await api.get('/appointment');
-      const allAppointments: Appointment[] = appointmentsResponse.data.appointments || appointmentsResponse.data || [];
+      let allAppointments: Appointment[] = [];
+      const apptPayload = appointmentsResponse.data;
+
+      if (Array.isArray(apptPayload)) {
+        allAppointments = apptPayload;
+        console.log('Using response as array');
+      } else if (apptPayload && Array.isArray(apptPayload.data)) {
+        allAppointments = apptPayload.data;
+        console.log('Using response.data as array');
+      } else if (apptPayload && Array.isArray(apptPayload.appointments)) {
+        allAppointments = apptPayload.appointments;
+        console.log('Using response.appointments as array');
+      } else {
+        console.warn('Unexpected appointment response format:', apptPayload);
+        allAppointments = [];
+      }
+
       console.log('Fetched appointments:', allAppointments.length);
       console.log('Sample appointment:', allAppointments[0]);
 
