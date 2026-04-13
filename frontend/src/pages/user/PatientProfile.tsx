@@ -7,7 +7,7 @@ import Navbar from '../../components/user/Navbar';
 const PatientProfile: React.FC = () => {
   const navigate = useNavigate();
   const { user: authUser } = useAuth();
-  const [profile, setProfile] = useState<PatientProfileType | null>(null);
+  const [_profile, setProfile] = useState<PatientProfileType | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Partial<PatientProfileType>>({});
   const [loading, setLoading] = useState(true);
