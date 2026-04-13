@@ -4,11 +4,25 @@ import cors from "cors";
 import dotenv from "dotenv";
 import patientRoutes from "./routes/patient.routes.js";
 import "./config/firebase.js";
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 
 dotenv.config();
 
 const app = express();
+
+// Increase payload size limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files for uploads
+const uploadsPath = path.join(__dirname, '../uploads');
+console.log('Serving static files from:', uploadsPath);
+app.use('/uploads', express.static(uploadsPath));
 
 app.use(
     cors({
@@ -39,6 +53,23 @@ app.get("/api/health", (_req, res) => {
 // 404
 app.use("*", (_req, res) => {
     res.status(404).json({ success: false, message: "Route not found" });
+});
+
+// Error handling for large payloads
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err.status === 413) {
+        res.status(413).json({ 
+            success: false, 
+            message: "File too large. Maximum file size is 5MB." 
+        });
+    } else if (err.message === 'Invalid file type. Only PDF, JPG, and PNG are allowed.') {
+        res.status(400).json({ 
+            success: false, 
+            message: err.message 
+        });
+    } else {
+        next(err);
+    }
 });
 
 // Start
