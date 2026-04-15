@@ -339,24 +339,20 @@ export const deleteMedicalReport = async (req: Request, res: Response): Promise<
             return;
         }
 
-        const report = profile.medicalReports.find(r => r.id === reportId);
-        if (report && report.fileUrl) {
-            const filePath = path.join(__dirname, '../', report.fileUrl);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
-
         const reportIndex = profile.medicalReports.findIndex(r => r.id === reportId);
         if (reportIndex === -1) {
             res.status(404).json({ success: false, message: "Report not found" });
             return;
         }
 
+        // Remove from database only (skip file deletion)
         profile.medicalReports.splice(reportIndex, 1);
         await profile.save();
 
-        res.status(200).json({ success: true, message: "Medical report deleted successfully" });
+        res.status(200).json({ 
+            success: true, 
+            message: "Medical report deleted successfully" 
+        });
     } catch (error) {
         console.error("Delete medical report error:", error);
         res.status(500).json({ success: false, message: "Internal server error." });
