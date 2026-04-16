@@ -41,6 +41,16 @@ export const broadcastAppointmentUpdate = async (req: Request, res: Response): P
     try {
         let { appointmentId, doctorId, patientId, action, date, time } = req.body;
 
+        // Helper to check for duplicates
+        const hasRecentNotification = async (appointmentId: string, type: string, minutes: number = 5): Promise<boolean> => {
+            const recent = await Notification.findOne({
+                appointmentId: appointmentId,
+                type: type,
+                sentAt: { $gte: new Date(Date.now() - minutes * 60 * 1000) }
+            });
+            return !!recent;
+        };
+
         // ── FIX: When action is "updated", fetch the real appointment status
         // so that generic updateAppointment calls (e.g. status → "completed" or
         // a reschedule that stored rescheduledAt) are routed to the correct email.
@@ -104,6 +114,13 @@ export const broadcastAppointmentUpdate = async (req: Request, res: Response): P
             // 1. APPOINTMENT CREATED / BOOKING UPDATED — send to BOTH patient and doctor
             case 'created':
             case 'updated':
+                // ✅ Check for duplicate before sending
+                const alreadySentBooking = await hasRecentNotification(appointmentId, 'booking_confirmation', 5);
+                if (alreadySentBooking) {
+                    console.log(`[Notification] Skipping duplicate booking email for appointment ${appointmentId}`);
+                    break;
+                }
+                
                 console.log(`[Notification] Sending BOOKING emails...`);
 
                 if (patientEmail) {
@@ -137,6 +154,13 @@ export const broadcastAppointmentUpdate = async (req: Request, res: Response): P
 
             // 2. APPOINTMENT COMPLETED — send to BOTH patient and doctor
             case 'completed':
+                // ✅ Check for duplicate before sending
+                const alreadySentCompletion = await hasRecentNotification(appointmentId, 'completion', 5);
+                if (alreadySentCompletion) {
+                    console.log(`[Notification] Skipping duplicate completion email for appointment ${appointmentId}`);
+                    break;
+                }
+                
                 console.log(`[Notification] Sending COMPLETION emails to BOTH...`);
 
                 if (patientEmail) {
@@ -178,6 +202,13 @@ export const broadcastAppointmentUpdate = async (req: Request, res: Response): P
 
             // 3. APPOINTMENT CANCELLED — send ONLY to patient
             case 'cancelled':
+                // ✅ Check for duplicate before sending
+                const alreadySentCancellation = await hasRecentNotification(appointmentId, 'cancellation', 5);
+                if (alreadySentCancellation) {
+                    console.log(`[Notification] Skipping duplicate cancellation email for appointment ${appointmentId}`);
+                    break;
+                }
+                
                 console.log(`[Notification] Sending CANCELLATION email to patient...`);
 
                 if (patientEmail) {
@@ -202,6 +233,13 @@ export const broadcastAppointmentUpdate = async (req: Request, res: Response): P
 
             // 4. APPOINTMENT RESCHEDULED — send ONLY to patient
             case 'rescheduled':
+                // ✅ Check for duplicate before sending
+                const alreadySentReschedule = await hasRecentNotification(appointmentId, 'reschedule', 5);
+                if (alreadySentReschedule) {
+                    console.log(`[Notification] Skipping duplicate reschedule email for appointment ${appointmentId}`);
+                    break;
+                }
+                
                 console.log(`[Notification] Sending RESCHEDULE email to patient...`);
 
                 if (patientEmail) {
