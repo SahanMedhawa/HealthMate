@@ -41,13 +41,18 @@ router.post("/firebase-login", firebaseLogin);
 
 router.get("/public/user/:id", getUserByIdPublic);
 
+
+// MOVE THIS HERE: Allow Admin Service to fetch all patients without auth
+// GET /api/patient/
+router.get("/", getAllPatients); 
+
 // ========== PROTECTED ROUTES (require authentication) ==========
 router.use(authenticateToken);
 
 // ========== USER MANAGEMENT ==========
 // GET /api/patient/user/:id
 router.get("/user/:id", getUserById);
-router.get("/", getAllPatients);
+//router.get("/", getAllPatients);
 router.get("/me", getCurrentUser);
 router.put("/profile", updateProfile);
 

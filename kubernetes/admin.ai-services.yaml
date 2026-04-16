@@ -1,0 +1,76 @@
+# --- ADMIN SERVICE ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-service
+  template:
+    metadata:
+      labels:
+        app: admin-service
+    spec:
+      containers:
+      - name: admin-service
+        image: admin-service:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5004
+        envFrom:
+        - secretRef:
+            name: admin-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-service
+spec:
+  selector:
+    app: admin-service
+  ports:
+  - protocol: TCP
+    port: 5004
+    targetPort: 5004
+  type: NodePort
+
+---
+# --- AI SERVICE ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-service
+  template:
+    metadata:
+      labels:
+        app: ai-service
+    spec:
+      containers:
+      - name: ai-service
+        image: ai-service:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5007
+        envFrom:
+        - secretRef:
+            name: ai-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-service
+spec:
+  selector:
+    app: ai-service
+  ports:
+  - protocol: TCP
+    port: 5007
+    targetPort: 5007
+  type: NodePort
