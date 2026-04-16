@@ -45,7 +45,25 @@ const formatDate = (dateString: string): string => {
 // Helper function to format time
 const formatTime = (timeString: string): string => {
     if (!timeString || timeString === 'Time TBD') return 'To be confirmed';
-    return timeString;
+    
+    try {
+        // Handle "14:00" format (24-hour)
+        if (timeString.match(/^\d{1,2}:\d{2}$/)) {
+            const [hours, minutes] = timeString.split(':').map(Number);
+            const period = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours % 12 || 12;
+            return `${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+        }
+        
+        // Handle "2:00 PM" format (already formatted)
+        if (timeString.match(/\d{1,2}:\d{2}\s*(AM|PM)/i)) {
+            return timeString;
+        }
+        
+        return timeString;
+    } catch {
+        return timeString;
+    }
 };
 
 // ========== PATIENT EMAILS ==========
