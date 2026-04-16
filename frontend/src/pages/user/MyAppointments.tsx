@@ -136,20 +136,132 @@ const MyAppointments: React.FC = () => {
             return b.time.localeCompare(a.time);
           });
 
-              // Fetch diagnosis/prescription data for each appointment
-          sortedAppointments = await Promise.all(
-            sortedAppointments.map(async (appointment: Appointment) => {
-              try {
-                const diagnosisResponse = await api.get(`/diagnosis/appointment/${appointment._id}`);
-                if (diagnosisResponse.data?.data) {
-                  appointment.diagnosis = diagnosisResponse.data.data;
-                }
-              } catch (err) {
-                console.warn(`No diagnosis data for appointment ${appointment._id}`);
-              }
-              return appointment;
-            })
-          );
+              // Fetch diagnosis/prescription and payment data for each appointment
+              sortedAppointments = await Promise.all(
+                sortedAppointments.map(async (appointment: Appointment) => {
+                  try {
+                    const diagnosisResponse = await api.get(`/diagnosis/appointment/${appointment._id}`);
+                    if (diagnosisResponse.data?.data) {
+                      appointment.diagnosis = diagnosisResponse.data.data;
+                    }
+                  } catch (err) {
+                    console.warn(`No diagnosis data for appointment ${appointment._id}`);
+                  }
+
+                  try {
+                    const paymentResponse = await api.get(`/appointment/${appointment._id}/payment-status`);
+                    if (paymentResponse.data?.success && paymentResponse.data.data) {
+                      const payData = paymentResponse.data.data;
+                      appointment.paymentStatus = payData.paymentStatus ?? appointment.paymentStatus;
+                      appointment.paymentTransactionId = payData.paymentTransaction ?? appointment.paymentTransactionId;
+                    }
+                  } catch (err) {
+                    console.warn(`No payment data for appointment ${appointment._id}`, err);
+                    // swallow — we'll try multiple fallbacks below
+                  }
+
+                  // Enrich payment information so we can determine card/insurance/government
+                  try {
+                    const PAYMENT_BASE = 'http://localhost:5008/api';
+
+                    // Helper to map claim/funding status -> paymentStatus
+                    const mapClaimStatus = (s: string) => {
+                      const st = (s || '').toLowerCase();
+                      if (st === 'approved' || st === 'paid') return 'paid';
+                      if (st === 'rejected' || st === 'denied' || st === 'failed') return 'failed';
+                      return 'pending';
+                    };
+
+                    // If we already have a transaction object with paymentMethod, nothing to do
+                    if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'object') {
+                      const tx = appointment.paymentTransactionId as any;
+                      if (!tx.paymentMethod && tx.stripePaymentIntentId) {
+                        tx.paymentMethod = 'card';
+                        appointment.paymentStatus = tx.status ?? appointment.paymentStatus;
+                      }
+                    }
+
+                    // If we only have an id (string), try to resolve it to a transaction/claim/funding
+                    if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                      const txId = appointment.paymentTransactionId as string;
+
+                      // 1) Try to get a PaymentTransaction by appointment id
+                      try {
+                        const txResp = await fetch(`${PAYMENT_BASE}/payments/transactions/${appointment._id}`);
+                        if (txResp.ok) {
+                          const txData = await txResp.json();
+                          appointment.paymentTransactionId = txData;
+                          appointment.paymentStatus = txData.status ?? appointment.paymentStatus;
+                        }
+                      } catch (e) {
+                        // ignore
+                      }
+
+                      // 2) If still unresolved and txId looks like an insurance claim, try fetching claim by id
+                      if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                        try {
+                          const insResp = await fetch(`${PAYMENT_BASE}/insurance/insurance-claims/${txId}`);
+                          if (insResp.ok) {
+                            const ins = await insResp.json();
+                            appointment.paymentTransactionId = { _id: txId, paymentMethod: 'insurance', status: ins.status, claim: ins } as any;
+                            appointment.paymentStatus = mapClaimStatus(ins.status) as any;
+                          }
+                        } catch (e) {
+                          // ignore
+                        }
+                      }
+
+                      // 3) If still unresolved, try government funding by id
+                      if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                        try {
+                          const govResp = await fetch(`${PAYMENT_BASE}/government/government-funding/${txId}`);
+                          if (govResp.ok) {
+                            const gov = await govResp.json();
+                            appointment.paymentTransactionId = { _id: txId, paymentMethod: 'government', status: gov.status, funding: gov } as any;
+                            appointment.paymentStatus = mapClaimStatus(gov.status) as any;
+                          }
+                        } catch (e) {
+                          // ignore
+                        }
+                      }
+
+                      // 4) Final fallback: search receipts for this patient and match by appointmentId
+                      if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                        try {
+                          if (user?.id) {
+                            const receipts: any[] = await paymentApi.getReceiptsByPatient(user.id);
+                            const found = receipts.find(r => r.appointmentId === appointment._id || r.appointmentId === String(appointment._id));
+                            if (found) {
+                              // If Stripe payment exists on the receipt, treat it as card
+                              if (found.paymentIntentId) {
+                                appointment.paymentTransactionId = {
+                                  _id: found.paymentTransactionId,
+                                  paymentMethod: 'card',
+                                  stripePaymentIntentId: found.paymentIntentId,
+                                  status: found.paymentStatus
+                                } as any;
+                                appointment.paymentStatus = found.paymentStatus ?? appointment.paymentStatus;
+                              } else if (found.paymentTransactionId) {
+                                // leave id but set paymentStatus
+                                appointment.paymentStatus = found.paymentStatus ?? appointment.paymentStatus;
+                                appointment.paymentTransactionId = found.paymentTransactionId ?? appointment.paymentTransactionId;
+                              } else {
+                                appointment.paymentStatus = found.paymentStatus ?? appointment.paymentStatus;
+                              }
+                            }
+                          }
+                        } catch (err2) {
+                          console.warn(`Payment fallback failed for appointment ${appointment._id}`, err2);
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.warn('Enrich payment info failed for', appointment._id, err);
+                  }
+
+                  return appointment;
+                })
+              );
 
           console.log('Fetched appointments:', sortedAppointments);
           setAppointments(sortedAppointments);
@@ -284,20 +396,38 @@ const MyAppointments: React.FC = () => {
       const data = response.data;
       console.log('Delete response:', data);
 
-      if (data.success) {
-        console.log('Successfully cancelled, updating state');
-        // Update appointments state immediately without reloading
-        setAppointments(prevAppointments =>
-          prevAppointments.map(apt =>
-            apt._id === modal.appointmentId
-              ? { ...apt, status: 'cancelled' as const }
-              : apt
-          )
-        );
+      // Consider HTTP-level success as success even if backend doesn't include `success: true`
+      if (response.status >= 200 && response.status < 300) {
+        // If backend returned updated appointment in `data.data`, merge it
+        if (data && data.success && data.data) {
+          const updated = data.data;
+          setAppointments(prevAppointments =>
+            prevAppointments.map(apt =>
+              apt._id === modal.appointmentId
+                ? { ...apt, ...updated }
+                : apt
+            )
+          );
+        }
+        // If backend explicitly deleted the appointment, remove it from state
+        else if (data && data.message && String(data.message).toLowerCase().includes('deleted')) {
+          setAppointments(prevAppointments => prevAppointments.filter(apt => apt._id !== modal.appointmentId));
+        }
+        // Otherwise fallback to marking cancelled so UI moves it to history
+        else {
+          setAppointments(prevAppointments =>
+            prevAppointments.map(apt =>
+              apt._id === modal.appointmentId
+                ? { ...apt, status: 'cancelled' as const }
+                : apt
+            )
+          );
+        }
+
         // Close modal
         setModal({ isOpen: false, type: null, appointmentId: null });
       } else {
-        console.error('Failed to cancel appointment:', data.message);
+        console.error('Failed to cancel appointment:', data.message || data);
       }
     } catch (error) {
       console.error('Error cancelling appointment:', error);
@@ -599,6 +729,49 @@ const MyAppointments: React.FC = () => {
     return null;
   };
 
+  const getPaymentInfoBadge = (appointment: Appointment) => {
+    const tx = appointment.paymentTransactionId as any;
+    const method = tx && typeof tx === 'object' ? tx.paymentMethod : undefined;
+    const status = tx && typeof tx === 'object' ? tx.status : appointment.paymentStatus;
+
+    if (!method && !status) return <span className="text-gray-400 text-xs">-</span>;
+
+    if (method === 'government') {
+      const label = status === 'succeeded' || status === 'paid' ? 'Government Paid' : status === 'pending' ? 'Government Pending' : 'Government';
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+          <ShieldCheckIcon className="h-3 w-3" />
+          <span>{label}</span>
+        </div>
+      );
+    }
+
+    if (method === 'insurance') {
+      const label = status === 'succeeded' || status === 'paid' ? 'Insurance Paid' : status === 'pending' ? 'Insurance Pending' : 'Insurance';
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs">
+          <ReceiptPercentIcon className="h-3 w-3" />
+          <span>{label}</span>
+        </div>
+      );
+    }
+
+    if (method === 'card') {
+      const label = status === 'succeeded' || status === 'paid' ? 'Paid (Card)' : status === 'pending' ? 'Pending' : 'Failed';
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+          <CreditCardIcon className="h-3 w-3" />
+          <span>{label}</span>
+        </div>
+      );
+    }
+
+    // Fallback to generic payment status badge
+    if (status) return getPaymentStatusBadge(status);
+
+    return <span className="text-gray-400 text-xs">-</span>;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-teal-50">
       <Navbar />
@@ -875,6 +1048,9 @@ const MyAppointments: React.FC = () => {
                             Fee
                           </th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Payment
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Status
                           </th>
                         
@@ -928,6 +1104,11 @@ const MyAppointments: React.FC = () => {
                                 <div className="text-sm font-semibold text-green-600">
                                   ${appointment.consultationFee?.toLocaleString() || '0'}
                                 </div>
+                              </td>
+
+                              {/* Payment */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                {getPaymentInfoBadge(appointment)}
                               </td>
 
                               {/* Status */}
