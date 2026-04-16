@@ -316,7 +316,7 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
                   {/* Rate per Unit */}
                   <div>
                     <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Rate per Unit (LKR) <span className="text-red-500">*</span>
+                      Rate per Unit (USD) <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="number"
@@ -335,9 +335,9 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
                   <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <p className="text-sm text-gray-700">
                       <span className="font-medium">Total Cost:</span>{' '}
-                      {currentDrug.quantity} units × LKR {currentDrug.price.toFixed(2)} = {' '}
+                      {currentDrug.quantity} units × USD {currentDrug.price.toFixed(2)} = {' '}
                       <span className="font-bold text-blue-600">
-                        LKR {(currentDrug.quantity * currentDrug.price).toFixed(2)}
+                        USD {(currentDrug.quantity * currentDrug.price).toFixed(2)}
                       </span>
                     </p>
                   </div>
@@ -368,7 +368,7 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="font-semibold text-gray-900">
-                            LKR {(drug.price * drug.quantity).toFixed(2)}
+                            USD {(drug.price * drug.quantity).toFixed(2)}
                           </span>
                           <button
                             type="button"
@@ -391,13 +391,13 @@ const PrescriptionModal: React.FC<PrescriptionModalProps> = ({
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Medications ({formData.drugs.length} items):</span>
                     <span className="font-medium">
-                      LKR {formData.drugs.reduce((sum, drug) => sum + (drug.price * drug.quantity), 0).toFixed(2)}
+                      USD {formData.drugs.reduce((sum, drug) => sum + (drug.price * drug.quantity), 0).toFixed(2)}
                     </span>
                   </div>
                   <div className="border-t border-emerald-300 pt-2 mt-2 flex justify-between">
                     <span className="font-bold text-gray-900">Total Amount:</span>
                     <span className="font-bold text-emerald-600 text-lg">
-                      LKR {calculateTotal().toFixed(2)}
+                      USD {calculateTotal().toFixed(2)}
                     </span>
                   </div>
                 </div>

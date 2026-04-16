@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../services/api";
-import { format } from "date-fns";
+import { format, isValid } from "date-fns";
 import UpdateAvailability from "../../components/doctor/UpdateAvailability";
 
 type Appointment = {
@@ -60,6 +60,12 @@ const DoctorDashboard: React.FC = () => {
 
   const breakdown = calculateBreakdown(consultationFee);
 
+  // Safely format dates; returns fallback if invalid
+  const safeFormat = (dateInput: any, fmt: string, fallback = "Invalid date") => {
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    return isValid(d) ? format(d, fmt) : fallback;
+  };
+
   const fetchDashboardData = async () => {
     if (!user?.id) return;
     setLoading(true);
@@ -78,14 +84,21 @@ const DoctorDashboard: React.FC = () => {
       ).length;
       setPendingReviews(pendingCount);
 
-      const recentAppointments = allAppointments
-        .sort((a: any, b: any) => new Date(b.createdAt || b.date).getTime() - new Date(a.createdAt || a.date).getTime())
+      const sortedAppointments = (allAppointments || []).slice().sort((a: any, b: any) => {
+        const dateA = new Date(a.createdAt || a.date);
+        const dateB = new Date(b.createdAt || b.date);
+        const tA = isValid(dateA) ? dateA.getTime() : 0;
+        const tB = isValid(dateB) ? dateB.getTime() : 0;
+        return tB - tA;
+      });
+
+      const recentAppointments = sortedAppointments
         .slice(0, 3)
         .map((apt: any) => ({
           id: apt._id,
           type: apt.status === 'completed' ? 'completed' : apt.status === 'booked' ? 'scheduled' : 'updated',
           patientName: apt.patientName,
-          time: format(new Date(apt.createdAt || apt.date), 'MMM dd, yyyy'),
+          time: safeFormat(apt.createdAt || apt.date, 'MMM dd, yyyy', 'Unknown date'),
           status: apt.status
         }));
       setRecentActivity(recentAppointments);

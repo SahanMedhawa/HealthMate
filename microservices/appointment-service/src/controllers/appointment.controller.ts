@@ -5,6 +5,7 @@ import { normalizeDate } from "../services/QueueService.js";
 import axios from "axios";
 import mongoose from "mongoose";
 
+const USER_SERVICE_URL = process.env.USER_SERVICE_URL || "http://localhost:5001";
 const DOCTOR_SERVICE_URL = process.env.DOCTOR_SERVICE_URL || "http://localhost:5002";
 const NOTIFICATION_SERVICE_URL = process.env.NOTIFICATION_SERVICE_URL || "http://localhost:5006";
 
@@ -18,6 +19,24 @@ async function getDoctorStartTime(doctorId: string, date: string): Promise<strin
             return d === date;
         });
         return avail ? avail.startTime : null;
+    } catch { return null; }
+}
+
+async function getUserById(userId: string): Promise<{
+    name: string;
+    email: string;
+    phone?: string;
+    photoURL?: string;
+} | null> {
+    try {
+        const res = await axios.get(`${USER_SERVICE_URL}/api/users/${userId}`);
+        const u = res.data.user ?? res.data;
+        return {
+            name:     u.name,
+            email:    u.email,
+            phone:    u.contactDetails?.phone,
+            photoURL: u.photoURL,
+        };
     } catch { return null; }
 }
 
@@ -73,38 +92,26 @@ export const getAppointmentById = async (req: Request, res: Response): Promise<v
         const appt = await Appointment.findById(req.params.id).populate('paymentTransactionId');
         if (!appt) { res.status(404).json({ message: "Appointment not found" }); return; }
         res.status(200).json(appt);
-    } catch (error) { res.status(500).json({ message: "Error fetching appointment", error }); }
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching appointment", error });
+    }
 };
-
-/*
-export const updateAppointment = async (req: Request, res: Response): Promise<void> => {
-    try {
-        const { paymentStatus, paymentTransactionId, ...updateData } = req.body;
-
-        // Fixed: 'paymentDetails' virtual was removed — populate the actual field
-        const appt = await Appointment.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('paymentTransactionId');
-        if (!appt) { res.status(404).json({ success: false, message: "Appointment not found" }); return; }
-        notifyAppointmentUpdate({ appointmentId: req.params.id, doctorId: appt.doctorId?.toString(), patientId: appt.patientId?.toString(), action: "updated", date: appt.date });
-        res.status(200).json({ success: true, data: appt, message: "Appointment updated successfully" });
-    } catch (error: any) { res.status(500).json({ success: false, message: "Error updating appointment", error: error.message }); }
-};
-*/
 
 export const updateAppointment = async (req: Request, res: Response): Promise<void> => {
     try {
         // Get original appointment for comparison (doesn't affect update)
         const originalAppt = await Appointment.findById(req.params.id);
-        
+
         // Extract payment fields that need special handling
         const { paymentStatus, paymentTransactionId, ...updateData } = req.body;
-        
+
         // ORIGINAL UPDATE LOGIC - preserved exactly as is
         const appt = await Appointment.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('paymentTransactionId');
-        if (!appt) { 
-            res.status(404).json({ success: false, message: "Appointment not found" }); 
-            return; 
+        if (!appt) {
+            res.status(404).json({ success: false, message: "Appointment not found" });
+            return;
         }
-        
+
         // ENHANCED NOTIFICATION - determines correct action for email
         let action = "updated";
         if (originalAppt) {
@@ -122,22 +129,22 @@ export const updateAppointment = async (req: Request, res: Response): Promise<vo
                 action = "rescheduled";
             }
         }
-        
+
         // Send notification with correct action type
-        notifyAppointmentUpdate({ 
-            appointmentId: req.params.id, 
+        notifyAppointmentUpdate({
+            appointmentId: req.params.id,
             doctorId: appt.doctorId?.toString(), 
-            patientId: appt.patientId?.toString(), 
+            patientId: appt.patientId?.toString(),
             action,
             date: appt.date 
         });
-        
+
         res.status(200).json({ 
             success: true, 
             data: appt, 
             message: "Appointment updated successfully" 
         });
-    } catch (error: any) { 
+    } catch (error: any) {
         res.status(500).json({ 
             success: false, 
             message: "Error updating appointment", 
@@ -286,27 +293,37 @@ export const getPaymentStatus = async (req: Request, res: Response): Promise<voi
             .populate({
                 path: 'paymentTransactionId',
                 select: 'status stripePaymentIntentId amount paymentMethod billId receiptNo'
-            })
-            .populate('patientId', 'name email contact');
+            });
+        // No .populate('patientId') — ref removed from schema; resolved via HTTP below
 
         if (!appointment) {
             res.status(404).json({ success: false, message: "Appointment not found" });
             return;
         }
 
+        // Fetch patient details from User service (non-fatal if unreachable)
+        const patientDetails = await getUserById(appointment.patientId.toString());
+
         const paymentTransaction = appointment.paymentTransactionId as any;
 
         res.status(200).json({
             success: true,
             data: {
-                appointmentId: appointment._id,                           // no ?. — confirmed non-null above
-                patientId: appointment.patientId,
-                appointmentStatus: appointment.status,
-                paymentStatus: paymentTransaction?.status ?? 'pending',   // ?. valid — payment may not exist
+                appointmentId:     appointment._id,
+                patientId:         appointment.patientId,
+                patientDetails: patientDetails
+                    ? {
+                        name:     patientDetails.name,
+                        email:    patientDetails.email,
+                        phone:    patientDetails.phone,      // IUser.contactDetails.phone
+                    }
+                    : null,                                  // null if User service unreachable
+                appointmentStatus:  appointment.status,
+                paymentStatus:      paymentTransaction?.status ?? 'pending',
                 paymentTransaction: paymentTransaction ?? null,
-                consultationFee: appointment.consultationFee,
-                date: appointment.date,
-                time: appointment.time
+                consultationFee:    appointment.consultationFee,
+                date:               appointment.date,
+                time:               appointment.time,
             }
         });
     } catch (error: any) {

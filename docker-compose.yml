@@ -123,8 +123,6 @@ services:
       - 8.8.4.4
     env_file:
       - ./microservices/telemedicine-service/.env
-    extra_hosts:
-      - "db.nxdrvzhlfckndjsdxfwk.supabase.co:2406:da12:b78:de0a:a26c:de8b:3e50:f7c2"
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5005/api/health || exit 1"]
       interval: 15s

@@ -440,6 +440,10 @@ const MyAppointments: React.FC = () => {
 
     // Payment Modal
     if (modal.type === 'payment' && selectedAppointment && feeBreakdown) {
+      const tx = selectedAppointment.paymentTransactionId as any;
+      const paymentStatus = tx && typeof tx === 'object' ? (tx.status ?? selectedAppointment.paymentStatus) : selectedAppointment.paymentStatus;
+      const isPaymentFailed = paymentStatus && String(paymentStatus).toLowerCase() === 'failed';
+
       return (
         <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full mx-auto shadow-2xl overflow-hidden">
@@ -511,8 +515,7 @@ const MyAppointments: React.FC = () => {
                 </div>
               </div>
 
-              {/* 
-              Action Buttons */}
+              {/* Action Buttons */}
               <div className="flex space-x-3">
                 <button
                   onClick={() => {
@@ -524,20 +527,16 @@ const MyAppointments: React.FC = () => {
                 >
                   Cancel
                 </button>
+
                 <button
                   onClick={handleProceedToPay}
-                  disabled={!!selectedAppointment?.paymentTransactionId}
-                  className={`flex-1 px-6 py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all ${
-                    selectedAppointment?.paymentTransactionId
-                      ? 'bg-gray-100 text-gray-600 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-green-500 to-teal-500 text-white hover:from-green-600 hover:to-teal-600 shadow-md hover:shadow-lg'
-                  }`}
-                  title={selectedAppointment?.paymentTransactionId ? 'Payment already initiated for this appointment' : ''}
+                  disabled={isPaymentFailed}
+                  className={`flex-1 px-6 py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all ${isPaymentFailed ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                  {selectedAppointment?.paymentTransactionId ? (
+                  {isPaymentFailed ? (
                     <>
-                      <ExclamationTriangleIcon className="h-5 w-5" />
-                      <span>Payment Already Initiated</span>
+                      <XCircleIcon className="h-5 w-5 text-red-600" />
+                      <span>Payment Failed</span>
                     </>
                   ) : (
                     <>
