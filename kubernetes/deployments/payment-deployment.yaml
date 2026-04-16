@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: payment-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5008
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: PAYMENT_PORT
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: PAYMENT_MONGO_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: JWT_SECRET
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: STRIPE_SECRET_KEY
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: FRONTEND_URL
+          readinessProbe:
+            tcpSocket:
+              port: 5008
+            initialDelaySeconds: 15
+            periodSeconds: 10

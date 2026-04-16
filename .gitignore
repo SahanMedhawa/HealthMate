@@ -1,5 +1,8 @@
 node_modules/
 .env
+.env.*
+**/.env
+**/.env.*
 dist/
 build/
 .vscode/
@@ -11,3 +14,7 @@ npm-debug.log*
 serviceAccountKey.json
 create-admin.ts
 target/
+kubernetes/secrets.local.yaml
+kubernetes/*.local.yaml
+kubernetes/*.local.yml
+healthmate-secrets.yaml

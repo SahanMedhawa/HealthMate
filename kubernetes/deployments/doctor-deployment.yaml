@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doctor-service
+  labels:
+    app: doctor-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doctor-service
+  template:
+    metadata:
+      labels:
+        app: doctor-service
+    spec:
+      containers:
+        - name: doctor-service
+          image: doctor-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5002
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: DOCTOR_PORT
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: DOCTOR_MONGO_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: JWT_SECRET
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: FRONTEND_URL
+            - name: APPOINTMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: APPOINTMENT_SERVICE_URL
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: NOTIFICATION_SERVICE_URL
+            - name: PATIENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: PATIENT_SERVICE_URL
+          readinessProbe:
+            tcpSocket:
+              port: 5002
+            initialDelaySeconds: 15
+            periodSeconds: 10

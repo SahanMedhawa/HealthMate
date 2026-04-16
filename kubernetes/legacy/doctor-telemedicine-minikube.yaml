@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: doctor-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: doctor-service
+  template:
+    metadata:
+      labels:
+        app: doctor-service
+    spec:
+      containers:
+        - name: doctor-service
+          image: doctor-service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5002
+          env:
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: doctor-service-secrets
+                  key: MONGO_URI
+            - name: PORT
+              value: "5002"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: doctor-service
+spec:
+  selector:
+    app: doctor-service
+  ports:
+    - name: http
+      port: 5002
+      targetPort: 5002
+      nodePort: 30052
+  type: NodePort
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemedicine-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemedicine-service
+  template:
+    metadata:
+      labels:
+        app: telemedicine-service
+    spec:
+      containers:
+        - name: telemedicine-service
+          image: telemedicine-service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5005
+          env:
+            - name: DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-service-secrets
+                  key: DATASOURCE_URL
+            - name: DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-service-secrets
+                  key: DATASOURCE_USERNAME
+            - name: DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-service-secrets
+                  key: DATASOURCE_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-service-secrets
+                  key: JWT_SECRET
+            - name: JITSI_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-service-secrets
+                  key: JITSI_BASE_URL
+            - name: CORS_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-service-secrets
+                  key: CORS_ORIGINS
+            - name: PORT
+              value: "5005"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemedicine-service
+spec:
+  selector:
+    app: telemedicine-service
+  ports:
+    - name: http
+      port: 5005
+      targetPort: 5005
+      nodePort: 30055
+  type: NodePort

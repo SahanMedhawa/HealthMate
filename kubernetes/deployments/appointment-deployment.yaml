@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appointment-service
+  labels:
+    app: appointment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appointment-service
+  template:
+    metadata:
+      labels:
+        app: appointment-service
+    spec:
+      containers:
+        - name: appointment-service
+          image: appointment-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5003
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: APPOINTMENT_PORT
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: APPOINTMENT_MONGO_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: JWT_SECRET
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: FRONTEND_URL
+            - name: DOCTOR_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: DOCTOR_SERVICE_URL
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: NOTIFICATION_SERVICE_URL
+            - name: PATIENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: PATIENT_SERVICE_URL
+          readinessProbe:
+            tcpSocket:
+              port: 5003
+            initialDelaySeconds: 15
+            periodSeconds: 10

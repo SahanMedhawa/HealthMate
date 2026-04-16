@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-service
+  labels:
+    app: admin-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-service
+  template:
+    metadata:
+      labels:
+        app: admin-service
+    spec:
+      containers:
+        - name: admin-service
+          image: admin-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5004
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: ADMIN_PORT
+            - name: MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: ADMIN_MONGO_URI
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: JWT_SECRET
+            - name: FRONTEND_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: FRONTEND_URL
+            - name: DOCTOR_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: DOCTOR_SERVICE_URL
+            - name: APPOINTMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: APPOINTMENT_SERVICE_URL
+            - name: PATIENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: PATIENT_SERVICE_URL
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: NOTIFICATION_SERVICE_URL
+          readinessProbe:
+            tcpSocket:
+              port: 5004
+            initialDelaySeconds: 15
+            periodSeconds: 10
