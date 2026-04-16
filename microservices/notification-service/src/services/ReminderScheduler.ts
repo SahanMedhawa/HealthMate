@@ -4,6 +4,7 @@ import Notification from '../models/notification.model.js';
 
 const APPOINTMENT_SERVICE_URL = process.env.APPOINTMENT_SERVICE_URL || "http://appointment-service:5003";
 const PATIENT_SERVICE_URL = process.env.PATIENT_SERVICE_URL || "http://patient-service:5001";
+const REMINDER_VERBOSE_LOGS = process.env.REMINDER_VERBOSE_LOGS === 'true';
 
 // Set your local timezone (Sri Lanka is UTC+5:30)
 const TIMEZONE_OFFSET = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
@@ -30,6 +31,23 @@ export const startReminderScheduler = () => {
     
     checkAndSendReminders();
 };
+
+function formatAxiosError(error: unknown): string {
+    if (axios.isAxiosError(error)) {
+        const method = error.config?.method?.toUpperCase() || 'GET';
+        const url = error.config?.url || 'unknown-url';
+        const status = error.response?.status;
+        const code = error.code || 'UNKNOWN';
+        const message = error.message || 'request failed';
+        return `${method} ${url} failed (code=${code}${status ? `, status=${status}` : ''}): ${message}`;
+    }
+
+    if (error instanceof Error) {
+        return error.message;
+    }
+
+    return String(error);
+}
 
 function getLocalTime(): Date {
     // Get current UTC time and add offset to get local time
@@ -76,7 +94,9 @@ async function checkAndSendReminders() {
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
     
-    console.log(`[Reminder] Local time: ${now.toLocaleString()}, Checking at ${currentHour}:${currentMinute}...`);
+    if (REMINDER_VERBOSE_LOGS) {
+        console.log(`[Reminder] Local time: ${now.toLocaleString()}, Checking at ${currentHour}:${currentMinute}...`);
+    }
     
     try {
         // Get tomorrow's date in local time
@@ -144,12 +164,12 @@ async function checkAndSendReminders() {
                             console.log(`[Reminder] ✅ Reminder sent!`);
                         }
                     } catch (err) {
-                        console.error(`[Reminder] Failed:`, err);
+                        console.error(`[Reminder] Failed: ${formatAxiosError(err)}`);
                     }
                 }
             }
         }
     } catch (error) {
-        console.error('[Reminder] Error:', error);
+        console.error(`[Reminder] Error: ${formatAxiosError(error)}`);
     }
 }
