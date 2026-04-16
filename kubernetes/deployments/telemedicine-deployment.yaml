@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemedicine-service
+  labels:
+    app: telemedicine-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemedicine-service
+  template:
+    metadata:
+      labels:
+        app: telemedicine-service
+    spec:
+      containers:
+        - name: telemedicine-service
+          image: telemedicine-service:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5005
+          env:
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: TELEMEDICINE_PORT
+            - name: DATASOURCE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: DATASOURCE_URL
+            - name: DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: DATASOURCE_USERNAME
+            - name: DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: DATASOURCE_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: healthmate-secrets
+                  key: JWT_SECRET
+            - name: JITSI_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: JITSI_BASE_URL
+            - name: CORS_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: healthmate-config
+                  key: CORS_ORIGINS
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5005
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 10
