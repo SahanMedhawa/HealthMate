@@ -76,6 +76,7 @@ export const getAppointmentById = async (req: Request, res: Response): Promise<v
     } catch (error) { res.status(500).json({ message: "Error fetching appointment", error }); }
 };
 
+/*
 export const updateAppointment = async (req: Request, res: Response): Promise<void> => {
     try {
         const { paymentStatus, paymentTransactionId, ...updateData } = req.body;
@@ -86,6 +87,63 @@ export const updateAppointment = async (req: Request, res: Response): Promise<vo
         notifyAppointmentUpdate({ appointmentId: req.params.id, doctorId: appt.doctorId?.toString(), patientId: appt.patientId?.toString(), action: "updated", date: appt.date });
         res.status(200).json({ success: true, data: appt, message: "Appointment updated successfully" });
     } catch (error: any) { res.status(500).json({ success: false, message: "Error updating appointment", error: error.message }); }
+};
+*/
+
+export const updateAppointment = async (req: Request, res: Response): Promise<void> => {
+    try {
+        // Get original appointment for comparison (doesn't affect update)
+        const originalAppt = await Appointment.findById(req.params.id);
+        
+        // Extract payment fields that need special handling
+        const { paymentStatus, paymentTransactionId, ...updateData } = req.body;
+        
+        // ORIGINAL UPDATE LOGIC - preserved exactly as is
+        const appt = await Appointment.findByIdAndUpdate(req.params.id, updateData, { new: true }).populate('paymentTransactionId');
+        if (!appt) { 
+            res.status(404).json({ success: false, message: "Appointment not found" }); 
+            return; 
+        }
+        
+        // ENHANCED NOTIFICATION - determines correct action for email
+        let action = "updated";
+        if (originalAppt) {
+            // Check if status changed to completed
+            if (req.body.status === "completed" && originalAppt.status !== "completed") {
+                action = "completed";
+            }
+            // Check if status changed to cancelled
+            else if (req.body.status === "cancelled" && originalAppt.status !== "cancelled") {
+                action = "cancelled";
+            }
+            // Check if date or time changed (reschedule)
+            else if ((req.body.date && req.body.date !== originalAppt.date) || 
+                     (req.body.time && req.body.time !== originalAppt.time)) {
+                action = "rescheduled";
+            }
+        }
+        
+        // Send notification with correct action type
+        notifyAppointmentUpdate({ 
+            appointmentId: req.params.id, 
+            doctorId: appt.doctorId?.toString(), 
+            patientId: appt.patientId?.toString(), 
+            action,
+            date: appt.date 
+        });
+        
+        res.status(200).json({ 
+            success: true, 
+            data: appt, 
+            message: "Appointment updated successfully" 
+        });
+    } catch (error: any) { 
+        res.status(500).json({ 
+            success: false, 
+            message: "Error updating appointment", 
+            error: error.message 
+        }); 
+    }
 };
 
 export const deleteAppointment = async (req: Request, res: Response): Promise<void> => {

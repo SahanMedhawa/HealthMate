@@ -2,8 +2,7 @@ import express from "express";
 import {
     createAppointment, getAppointmentById, updateAppointment,
     deleteAppointment, cancelAppointment, rescheduleAppointment,
-    getAppointmentsByPatient, getDoctorAppointmentsByDate, getDoctorAppointments,
-    updatePaymentStatus, getPaymentStatus, getAllAppointments
+    getAppointmentsByPatient, getDoctorAppointmentsByDate, getDoctorAppointments,updatePaymentStatus,getPaymentStatus,getAllAppointments
 } from "../controllers/appointment.controller.js";
 
 const router = express.Router();
