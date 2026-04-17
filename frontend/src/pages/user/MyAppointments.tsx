@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { format } from 'date-fns';
 import { useNavigate } from 'react-router-dom';
@@ -22,14 +22,36 @@ import {
   ReceiptPercentIcon,
   BuildingOfficeIcon,
   ShieldCheckIcon,
-  HomeIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline';
 
 // Add modal state and selected appointment
 interface ModalState {
   isOpen: boolean;
-  type: 'reschedule' | 'cancel' | 'payment' | 'prescription' | null;
+  type: 'reschedule' | 'cancel' | 'payment' | 'prescription' | 'paymentDone' | null;
   appointmentId: string | null;
+}
+
+interface PaymentDoneDetails {
+  method: 'card' | 'insurance' | 'government' | string;
+  status: string;
+  amount: number;
+  transactionId?: string;
+  receiptNo?: string;
+  paidAt?: string;
+  stripePaymentIntentId?: string;
+  // Insurance-specific
+  insuranceProvider?: string;
+  policyNumber?: string;
+  claimantName?: string;
+  claimantId?: string;
+  claimStatus?: string;
+  // Government-specific
+  programType?: string;
+  beneficiaryId?: string;
+  beneficiaryName?: string;
+  referenceNumber?: string;
+  fundingStatus?: string;
 }
 
 interface FeeBreakdown {
@@ -96,6 +118,8 @@ const MyAppointments: React.FC = () => {
   const [feeBreakdown, setFeeBreakdown] = useState<FeeBreakdown | null>(null);
   const [selectedDiagnosis, setSelectedDiagnosis] = useState<Diagnosis | null>(null);
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
+  const [paymentDoneDetails, setPaymentDoneDetails] = useState<PaymentDoneDetails | null>(null);
+  const [paymentDoneLoading, setPaymentDoneLoading] = useState(false);
 
   useEffect(() => {
     const fetchAppointments = async () => {
@@ -341,6 +365,127 @@ const MyAppointments: React.FC = () => {
     }
   };
 
+  const handleViewPaymentDone = async (appointment: Appointment) => {
+    setPaymentDoneLoading(true);
+    setSelectedAppointment(appointment);
+    setModal({ isOpen: true, type: 'paymentDone', appointmentId: appointment._id });
+
+    const PAYMENT_BASE = 'http://localhost:5008/api';
+    const tx = appointment.paymentTransactionId as any;
+    const method = tx && typeof tx === 'object' ? tx.paymentMethod : undefined;
+
+    const details: PaymentDoneDetails = {
+      method: method || 'card',
+      status: tx?.status || appointment.paymentStatus || 'paid',
+      amount: appointment.consultationFee || 0,
+      transactionId: tx?._id || (typeof appointment.paymentTransactionId === 'string' ? appointment.paymentTransactionId : undefined),
+      paidAt: tx?.createdAt,
+    };
+
+    try {
+      // Try to fetch the full transaction from the payment service
+      const txResp = await fetch(`${PAYMENT_BASE}/payments/transactions/${appointment._id}`);
+      if (txResp.ok) {
+        const txData = await txResp.json();
+        details.transactionId = txData._id;
+        details.receiptNo = txData.receiptNo;
+        details.amount = txData.amount || details.amount;
+        details.method = txData.paymentMethod || details.method;
+        details.status = txData.status || details.status;
+        details.paidAt = txData.createdAt || details.paidAt;
+        details.stripePaymentIntentId = txData.stripePaymentIntentId;
+
+        // If it has insurance claim id, fetch insurance details
+        if (txData.insuranceClaimId) {
+          try {
+            const insResp = await fetch(`${PAYMENT_BASE}/insurance/insurance-claims/${txData.insuranceClaimId}`);
+            if (insResp.ok) {
+              const ins = await insResp.json();
+              details.method = 'insurance';
+              details.insuranceProvider = ins.insuranceProvider;
+              details.policyNumber = ins.policyNumber;
+              details.claimantName = ins.claimantName;
+              details.claimantId = ins.claimantId;
+              details.claimStatus = ins.status;
+              // Map insurance claim status to payment status
+              const insStatus = (ins.status || '').toLowerCase();
+              if (insStatus === 'approved') details.status = 'paid';
+              else if (insStatus === 'submitted' || insStatus === 'processing') details.status = 'pending';
+              else if (insStatus === 'rejected') details.status = 'failed';
+            }
+          } catch (e) { /* ignore */ }
+        }
+
+        // If it has government funding id, fetch government details
+        if (txData.governmentFundingId) {
+          try {
+            const govResp = await fetch(`${PAYMENT_BASE}/government/government-funding/${txData.governmentFundingId}`);
+            if (govResp.ok) {
+              const gov = await govResp.json();
+              details.method = 'government';
+              details.programType = gov.programType;
+              details.beneficiaryId = gov.beneficiaryId;
+              details.beneficiaryName = gov.beneficiaryName;
+              details.referenceNumber = gov.referenceNumber;
+              details.fundingStatus = gov.status;
+              // Map government funding status to payment status
+              const govStatus = (gov.status || '').toLowerCase();
+              if (govStatus === 'approved') details.status = 'paid';
+              else if (govStatus === 'submitted' || govStatus === 'processing') details.status = 'pending';
+              else if (govStatus === 'rejected') details.status = 'failed';
+            }
+          } catch (e) { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch transaction details', e);
+    }
+
+    // Fallback: if method came from the enriched tx object already
+    if (tx && typeof tx === 'object') {
+      if (tx.claim && !details.insuranceProvider) {
+        details.method = 'insurance';
+        details.insuranceProvider = tx.claim.insuranceProvider;
+        details.policyNumber = tx.claim.policyNumber;
+        details.claimantName = tx.claim.claimantName;
+        details.claimantId = tx.claim.claimantId;
+        details.claimStatus = tx.claim.status;
+        const fbInsStatus = (tx.claim.status || '').toLowerCase();
+        if (fbInsStatus === 'approved') details.status = 'paid';
+        else if (fbInsStatus === 'submitted' || fbInsStatus === 'processing') details.status = 'pending';
+      }
+      if (tx.funding && !details.programType) {
+        details.method = 'government';
+        details.programType = tx.funding.programType;
+        details.beneficiaryId = tx.funding.beneficiaryId;
+        details.beneficiaryName = tx.funding.beneficiaryName;
+        details.referenceNumber = tx.funding.referenceNumber;
+        details.fundingStatus = tx.funding.status;
+        const fbGovStatus = (tx.funding.status || '').toLowerCase();
+        if (fbGovStatus === 'approved') details.status = 'paid';
+        else if (fbGovStatus === 'submitted' || fbGovStatus === 'processing') details.status = 'pending';
+      }
+      if (tx.stripePaymentIntentId && !details.stripePaymentIntentId) {
+        details.stripePaymentIntentId = tx.stripePaymentIntentId;
+      }
+    }
+
+    // Try to get receipt info if we don't have receiptNo yet
+    if (!details.receiptNo && user?.id) {
+      try {
+        const receipts: any[] = await paymentApi.getReceiptsByPatient(user.id);
+        const found = receipts.find(r => r.appointmentId === appointment._id || r.appointmentId === String(appointment._id));
+        if (found) {
+          details.receiptNo = found.receiptNo;
+          details.paidAt = details.paidAt || found.paymentDate || found.createdAt;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    setPaymentDoneDetails(details);
+    setPaymentDoneLoading(false);
+  };
+
   const handleReschedule = async () => {
     if (!modal.appointmentId) return;
 
@@ -547,6 +692,296 @@ const MyAppointments: React.FC = () => {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Payment Done Modal
+    if (modal.type === 'paymentDone' && selectedAppointment) {
+      const closePaymentDone = () => {
+        setModal({ isOpen: false, type: null, appointmentId: null });
+        setSelectedAppointment(null);
+        setPaymentDoneDetails(null);
+      };
+
+      const statusNorm = (paymentDoneDetails?.status || '').toLowerCase().replace('succeeded', 'paid');
+      const isPaid = statusNorm === 'paid' || statusNorm === 'approved';
+      const isPending = statusNorm === 'pending' || statusNorm === 'submitted' || statusNorm === 'processing';
+
+      const methodGradient =
+        paymentDoneDetails?.method === 'insurance'
+          ? 'from-indigo-500 to-blue-600'
+          : paymentDoneDetails?.method === 'government'
+          ? 'from-emerald-500 to-teal-600'
+          : 'from-green-500 to-teal-500';
+
+      const methodIcon =
+        paymentDoneDetails?.method === 'insurance'
+          ? <ShieldCheckIcon className="h-7 w-7 text-white" />
+          : paymentDoneDetails?.method === 'government'
+          ? <BuildingOfficeIcon className="h-7 w-7 text-white" />
+          : <CreditCardIcon className="h-7 w-7 text-white" />;
+
+      const methodLabel =
+        paymentDoneDetails?.method === 'insurance'
+          ? 'Insurance Claim'
+          : paymentDoneDetails?.method === 'government'
+          ? 'Government Funding'
+          : 'Card Payment';
+
+      return (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-auto shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className={`bg-gradient-to-r ${methodGradient} p-6`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-white/20 rounded-xl">{methodIcon}</div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">Payment Details</h3>
+                    <p className="text-white/80 text-sm mt-0.5">{methodLabel}</p>
+                  </div>
+                </div>
+                <button onClick={closePaymentDone} className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 transition-colors">
+                  <XMarkIcon className="h-5 w-5 text-white" />
+                </button>
+              </div>
+            </div>
+
+            {paymentDoneLoading ? (
+              <div className="p-10 flex flex-col items-center justify-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 mb-3"></div>
+                <p className="text-gray-500">Loading payment details...</p>
+              </div>
+            ) : paymentDoneDetails ? (
+              <div className="p-6 space-y-5">
+                {/* Status Banner */}
+                <div className={`flex items-center space-x-3 p-4 rounded-xl ${isPaid ? 'bg-green-50 border border-green-200' : isPending ? 'bg-yellow-50 border border-yellow-200' : 'bg-red-50 border border-red-200'}`}>
+                  {isPaid ? <CheckCircleIcon className="h-8 w-8 text-green-500 flex-shrink-0" /> : isPending ? <ExclamationTriangleIcon className="h-8 w-8 text-yellow-500 flex-shrink-0" /> : <XCircleIcon className="h-8 w-8 text-red-500 flex-shrink-0" />}
+                  <div>
+                    <p className={`font-bold text-lg ${isPaid ? 'text-green-700' : isPending ? 'text-yellow-700' : 'text-red-700'}`}>
+                      {isPaid ? 'Payment Successful' : isPending ? 'Payment Pending' : 'Payment Failed'}
+                    </p>
+                    <p className={`text-sm ${isPaid ? 'text-green-600' : isPending ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {isPaid ? 'Your payment has been processed successfully' : isPending ? 'Your payment is being processed' : 'There was an issue with your payment'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl text-center">
+                  <p className="text-sm text-gray-500 mb-1">Amount Paid</p>
+                  <p className="text-3xl font-bold text-gray-900">${paymentDoneDetails.amount.toLocaleString()}</p>
+                </div>
+
+                {/* Appointment Info */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Appointment Info</h4>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Doctor</span>
+                      <span className="text-sm font-medium text-gray-900">{selectedAppointment.doctorName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Date</span>
+                      <span className="text-sm font-medium text-gray-900">{format(new Date(selectedAppointment.date), 'MMM dd, yyyy')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Time</span>
+                      <span className="text-sm font-medium text-gray-900">{selectedAppointment.time}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Queue #</span>
+                      <span className="text-sm font-medium text-gray-900">#{selectedAppointment.queueNumber}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Details */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Transaction Details</h4>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Payment Method</span>
+                      <span className="text-sm font-medium text-gray-900 capitalize flex items-center space-x-1">
+                        {paymentDoneDetails.method === 'card' && <CreditCardIcon className="h-4 w-4 text-green-500" />}
+                        {paymentDoneDetails.method === 'insurance' && <ShieldCheckIcon className="h-4 w-4 text-indigo-500" />}
+                        {paymentDoneDetails.method === 'government' && <BuildingOfficeIcon className="h-4 w-4 text-emerald-500" />}
+                        <span>{methodLabel}</span>
+                      </span>
+                    </div>
+                    {paymentDoneDetails.transactionId && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Transaction ID</span>
+                        <span className="text-xs font-mono text-gray-700 bg-gray-200 px-2 py-0.5 rounded">{paymentDoneDetails.transactionId.slice(-12)}</span>
+                      </div>
+                    )}
+                    {paymentDoneDetails.receiptNo && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Receipt No</span>
+                        <span className="text-sm font-medium text-gray-900">{paymentDoneDetails.receiptNo}</span>
+                      </div>
+                    )}
+                    {paymentDoneDetails.stripePaymentIntentId && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Stripe Ref</span>
+                        <span className="text-xs font-mono text-gray-700 bg-gray-200 px-2 py-0.5 rounded">...{paymentDoneDetails.stripePaymentIntentId.slice(-10)}</span>
+                      </div>
+                    )}
+                    {paymentDoneDetails.paidAt && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Paid At</span>
+                        <span className="text-sm font-medium text-gray-900">{format(new Date(paymentDoneDetails.paidAt), 'MMM dd, yyyy hh:mm a')}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Insurance Details */}
+                {paymentDoneDetails.method === 'insurance' && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-3 flex items-center space-x-1">
+                      <ShieldCheckIcon className="h-4 w-4" />
+                      <span>Insurance Details</span>
+                    </h4>
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-2">
+                      {paymentDoneDetails.insuranceProvider && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Provider</span>
+                          <span className="text-sm font-semibold text-indigo-900">{paymentDoneDetails.insuranceProvider}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.policyNumber && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Policy Number</span>
+                          <span className="text-sm font-medium text-indigo-900">{paymentDoneDetails.policyNumber}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.claimantName && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Claimant Name</span>
+                          <span className="text-sm font-medium text-indigo-900">{paymentDoneDetails.claimantName}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.claimantId && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Claimant ID</span>
+                          <span className="text-sm font-medium text-indigo-900">{paymentDoneDetails.claimantId}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.claimStatus && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-indigo-600">Claim Status</span>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${
+                            paymentDoneDetails.claimStatus === 'approved' ? 'bg-green-100 text-green-700' :
+                            paymentDoneDetails.claimStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>{paymentDoneDetails.claimStatus}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Government Funding Details */}
+                {paymentDoneDetails.method === 'government' && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3 flex items-center space-x-1">
+                      <BuildingOfficeIcon className="h-4 w-4" />
+                      <span>Government Funding Details</span>
+                    </h4>
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 space-y-2">
+                      {paymentDoneDetails.programType && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Program Type</span>
+                          <span className="text-sm font-semibold text-emerald-900">{paymentDoneDetails.programType}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.beneficiaryName && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Beneficiary Name</span>
+                          <span className="text-sm font-medium text-emerald-900">{paymentDoneDetails.beneficiaryName}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.beneficiaryId && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Beneficiary ID</span>
+                          <span className="text-sm font-medium text-emerald-900">{paymentDoneDetails.beneficiaryId}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.referenceNumber && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Reference Number</span>
+                          <span className="text-sm font-medium text-emerald-900">{paymentDoneDetails.referenceNumber}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.fundingStatus && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-emerald-600">Funding Status</span>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${
+                            paymentDoneDetails.fundingStatus === 'approved' ? 'bg-green-100 text-green-700' :
+                            paymentDoneDetails.fundingStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>{paymentDoneDetails.fundingStatus}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fee Breakdown */}
+                {selectedAppointment.consultationFee && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Fee Breakdown</h4>
+                    <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                      {(() => {
+                        const bd = calculateFeeBreakdown(selectedAppointment.consultationFee!);
+                        return (
+                          <>
+                            <div className="flex justify-between">
+                              <div className="flex items-center space-x-2">
+                                <UserIcon className="h-4 w-4 text-blue-500" />
+                                <span className="text-sm text-gray-600">Doctor's Fee</span>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">${bd.doctorFee.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <div className="flex items-center space-x-2">
+                                <BuildingOfficeIcon className="h-4 w-4 text-purple-500" />
+                                <span className="text-sm text-gray-600">Hospital Charge (10%)</span>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">${bd.hospitalCharge.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <div className="flex items-center space-x-2">
+                                <ReceiptPercentIcon className="h-4 w-4 text-orange-500" />
+                                <span className="text-sm text-gray-600">VAT (8%)</span>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">${bd.vat.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t border-gray-200">
+                              <span className="text-sm font-bold text-gray-700">Total</span>
+                              <span className="text-sm font-bold text-green-600">${bd.totalFee.toLocaleString()}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Close Button */}
+                <button
+                  onClick={closePaymentDone}
+                  className={`w-full px-4 py-3 text-white rounded-xl font-medium transition-colors bg-gradient-to-r ${methodGradient} hover:opacity-90`}
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <div className="p-10 text-center text-gray-400">No payment details available.</div>
+            )}
           </div>
         </div>
       );
@@ -983,13 +1418,21 @@ const MyAppointments: React.FC = () => {
                             {/* Action Buttons */}
                             {appointment.status === 'booked' && (
                               <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-                                {appointment.paymentStatus !== 'paid' && (
+                                {appointment.paymentStatus !== 'paid' ? (
                                   <button
                                     onClick={() => handlePaymentClick(appointment)}
                                     className="flex items-center justify-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 w-full sm:w-auto font-medium"
                                   >
                                     <CreditCardIcon className="h-4 w-4" />
                                     <span>Pay Now</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleViewPaymentDone(appointment)}
+                                    className="flex items-center justify-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-lg hover:from-teal-600 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 w-full sm:w-auto font-medium"
+                                  >
+                                    <BanknotesIcon className="h-4 w-4" />
+                                    <span>View Payment</span>
                                   </button>
                                 )}
                                 <button
@@ -1059,6 +1502,9 @@ const MyAppointments: React.FC = () => {
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Notes
                           </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Actions
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-100">
@@ -1107,7 +1553,17 @@ const MyAppointments: React.FC = () => {
 
                               {/* Payment */}
                               <td className="px-4 py-4 whitespace-nowrap">
-                                {getPaymentInfoBadge(appointment)}
+                                {(appointment.paymentStatus === 'paid' || (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'object')) ? (
+                                  <button
+                                    onClick={() => handleViewPaymentDone(appointment)}
+                                    className="hover:scale-105 transition-transform cursor-pointer"
+                                    title="Click to view payment details"
+                                  >
+                                    {getPaymentInfoBadge(appointment)}
+                                  </button>
+                                ) : (
+                                  getPaymentInfoBadge(appointment)
+                                )}
                               </td>
 
                               {/* Status */}
@@ -1167,6 +1623,29 @@ const MyAppointments: React.FC = () => {
                                     <span className="text-gray-400 text-xs">-</span>
                                   )}
                                 </div>
+                              </td>
+
+                              {/* Actions */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                {(appointment.paymentStatus === 'paid' || (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'object')) ? (
+                                  <button
+                                    onClick={() => handleViewPaymentDone(appointment)}
+                                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-lg hover:from-teal-600 hover:to-emerald-700 transition-all duration-200 shadow-sm hover:shadow-md text-xs font-medium"
+                                  >
+                                    <BanknotesIcon className="h-3.5 w-3.5" />
+                                    <span>View Payment</span>
+                                  </button>
+                                ) : appointment.paymentStatus === 'pending' && appointment.status !== 'cancelled' ? (
+                                  <button
+                                    onClick={() => handlePaymentClick(appointment)}
+                                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-sm hover:shadow-md text-xs font-medium"
+                                  >
+                                    <CreditCardIcon className="h-3.5 w-3.5" />
+                                    <span>Pay Now</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">-</span>
+                                )}
                               </td>
                             </tr>
                           ))}
