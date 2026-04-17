@@ -9,14 +9,20 @@ export default function AISymptomChecker() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-    const handleCheck = async () => {
+  // Get the API Base URL from .env.local
+  // Ensure your .env.local has: VITE_API_URL="http://localhost:8080/api"
+  const API_URL = import.meta.env.VITE_API_URL;
+
+  const handleCheck = async () => {
     if (!symptom.trim()) return;
     
     setLoading(true);
     setResult(null);
 
     try {
-      const res = await axios.post('http://localhost:5007/api/ai/check', { symptom });
+      // Use the environment variable + '/ai/check'
+      // Resulting URL: http://localhost:8080/api/ai/check
+      const res = await axios.post(`${API_URL}/ai/check`, { symptom });
       
       console.log("Full API Response:", res.data); // Debug log to verify structure
 
@@ -43,6 +49,7 @@ export default function AISymptomChecker() {
       setLoading(false);
     }
   };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* ✅ Add the Navbar here */}
