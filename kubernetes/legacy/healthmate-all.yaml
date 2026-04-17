@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appointment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appointment-service
+  template:
+    metadata:
+      labels:
+        app: appointment-service
+    spec:
+      containers:
+        - name: appointment-service
+          image: appointment-service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5003
+
+          env:
+            - name: MONGO_URI
+              value: "[Insert Url Here from appointment service env file]"
+            - name: PORT
+              value: "5003"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: payment-service
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 5008
+
+          env:
+            - name: MONGO_URI
+              value: "[Insert Url Here from payment service env file]"
+            - name: PORT
+              value: "5008"

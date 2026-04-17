@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/user/Navbar';
 import Footer from '../../components/Footer';
 import api from '../../api/client';
+import { paymentApi } from '../../services/payment.api';
 import {
   CalendarDaysIcon,
   ClockIcon,
@@ -16,13 +17,75 @@ import {
   PencilSquareIcon,
   XMarkIcon,
   PlusIcon,
+  CurrencyDollarIcon,
+  CreditCardIcon,
+  ReceiptPercentIcon,
+  BuildingOfficeIcon,
+  ShieldCheckIcon,
+  BanknotesIcon,
 } from '@heroicons/react/24/outline';
 
 // Add modal state and selected appointment
 interface ModalState {
   isOpen: boolean;
-  type: 'reschedule' | 'cancel' | null;
+  type: 'reschedule' | 'cancel' | 'payment' | 'prescription' | 'paymentDone' | null;
   appointmentId: string | null;
+}
+
+interface PaymentDoneDetails {
+  method: 'card' | 'insurance' | 'government' | string;
+  status: string;
+  amount: number;
+  transactionId?: string;
+  receiptNo?: string;
+  paidAt?: string;
+  stripePaymentIntentId?: string;
+  // Insurance-specific
+  insuranceProvider?: string;
+  policyNumber?: string;
+  claimantName?: string;
+  claimantId?: string;
+  claimStatus?: string;
+  // Government-specific
+  programType?: string;
+  beneficiaryId?: string;
+  beneficiaryName?: string;
+  referenceNumber?: string;
+  fundingStatus?: string;
+}
+
+interface FeeBreakdown {
+  doctorFee: number;
+  hospitalCharge: number;
+  vat: number;
+  totalFee: number;
+}
+
+interface PaymentTransaction {
+  _id?: string;
+  amount: number;
+  status: 'pending' | 'succeeded' | 'failed';
+  stripePaymentIntentId?: string;
+  createdAt?: string;
+  paymentMethod?: 'card' | 'insurance' | 'government';
+}
+
+interface Prescription {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+  quantity: number;
+  price: number;
+}
+
+interface Diagnosis {
+  _id?: string;
+  appointmentId: string;
+  symptoms?: string;
+  diagnosis?: string;
+  drugs?: Prescription[];
+  notes?: string;
 }
 
 interface Appointment {
@@ -34,6 +97,10 @@ interface Appointment {
   time: string;
   status: 'booked' | 'in_session' | 'completed' | 'cancelled';
   notes?: string;
+  consultationFee?: number;
+  paymentStatus?: 'pending' | 'paid' | 'failed';
+  paymentTransactionId?: string | PaymentTransaction;
+  diagnosis?: Diagnosis;
 }
 
 const MyAppointments: React.FC = () => {
@@ -47,6 +114,12 @@ const MyAppointments: React.FC = () => {
     type: null,
     appointmentId: null
   });
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [feeBreakdown, setFeeBreakdown] = useState<FeeBreakdown | null>(null);
+  const [selectedDiagnosis, setSelectedDiagnosis] = useState<Diagnosis | null>(null);
+  const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
+  const [paymentDoneDetails, setPaymentDoneDetails] = useState<PaymentDoneDetails | null>(null);
+  const [paymentDoneLoading, setPaymentDoneLoading] = useState(false);
 
   useEffect(() => {
     const fetchAppointments = async () => {
@@ -73,22 +146,148 @@ const MyAppointments: React.FC = () => {
           setError(data.message || 'Failed to fetch appointments');
           setAppointments([]);
         } else {
-          // Sort appointments by date (oldest first) and then by time
-          const sortedAppointments = (data.data || []).sort((a: Appointment, b: Appointment) => {
+          // Sort appointments by date (newest first) and then by time (latest first)
+          let sortedAppointments = (data.data || []).sort((a: Appointment, b: Appointment) => {
             const dateA = new Date(a.date);
             const dateB = new Date(b.date);
 
-            // First sort by date (oldest first)
+            // First sort by date (newest first)
             if (dateA.getTime() !== dateB.getTime()) {
-              return dateA.getTime() - dateB.getTime();
+              return dateB.getTime() - dateA.getTime();
             }
 
-            // If same date, sort by time (earliest first)
-            return a.time.localeCompare(b.time);
+            // If same date, sort by time (latest first)
+            return b.time.localeCompare(a.time);
           });
 
+              // Fetch diagnosis/prescription and payment data for each appointment
+              sortedAppointments = await Promise.all(
+                sortedAppointments.map(async (appointment: Appointment) => {
+                  try {
+                    const diagnosisResponse = await api.get(`/diagnosis/appointment/${appointment._id}`);
+                    if (diagnosisResponse.data?.data) {
+                      appointment.diagnosis = diagnosisResponse.data.data;
+                    }
+                  } catch (err) {
+                    console.warn(`No diagnosis data for appointment ${appointment._id}`);
+                  }
+
+                  try {
+                    const paymentResponse = await api.get(`/appointment/${appointment._id}/payment-status`);
+                    if (paymentResponse.data?.success && paymentResponse.data.data) {
+                      const payData = paymentResponse.data.data;
+                      appointment.paymentStatus = payData.paymentStatus ?? appointment.paymentStatus;
+                      appointment.paymentTransactionId = payData.paymentTransaction ?? appointment.paymentTransactionId;
+                    }
+                  } catch (err) {
+                    console.warn(`No payment data for appointment ${appointment._id}`, err);
+                    // swallow — we'll try multiple fallbacks below
+                  }
+
+                  // Enrich payment information so we can determine card/insurance/government
+                  try {
+                    const PAYMENT_BASE = 'http://localhost:5008/api';
+
+                    // Helper to map claim/funding status -> paymentStatus
+                    const mapClaimStatus = (s: string) => {
+                      const st = (s || '').toLowerCase();
+                      if (st === 'approved' || st === 'paid') return 'paid';
+                      if (st === 'rejected' || st === 'denied' || st === 'failed') return 'failed';
+                      return 'pending';
+                    };
+
+                    // If we already have a transaction object with paymentMethod, nothing to do
+                    if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'object') {
+                      const tx = appointment.paymentTransactionId as any;
+                      if (!tx.paymentMethod && tx.stripePaymentIntentId) {
+                        tx.paymentMethod = 'card';
+                        appointment.paymentStatus = tx.status ?? appointment.paymentStatus;
+                      }
+                    }
+
+                    // If we only have an id (string), try to resolve it to a transaction/claim/funding
+                    if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                      const txId = appointment.paymentTransactionId as string;
+
+                      // 1) Try to get a PaymentTransaction by appointment id
+                      try {
+                        const txResp = await fetch(`${PAYMENT_BASE}/payments/transactions/${appointment._id}`);
+                        if (txResp.ok) {
+                          const txData = await txResp.json();
+                          appointment.paymentTransactionId = txData;
+                          appointment.paymentStatus = txData.status ?? appointment.paymentStatus;
+                        }
+                      } catch (e) {
+                        // ignore
+                      }
+
+                      // 2) If still unresolved and txId looks like an insurance claim, try fetching claim by id
+                      if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                        try {
+                          const insResp = await fetch(`${PAYMENT_BASE}/insurance/insurance-claims/${txId}`);
+                          if (insResp.ok) {
+                            const ins = await insResp.json();
+                            appointment.paymentTransactionId = { _id: txId, paymentMethod: 'insurance', status: ins.status, claim: ins } as any;
+                            appointment.paymentStatus = mapClaimStatus(ins.status) as any;
+                          }
+                        } catch (e) {
+                          // ignore
+                        }
+                      }
+
+                      // 3) If still unresolved, try government funding by id
+                      if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                        try {
+                          const govResp = await fetch(`${PAYMENT_BASE}/government/government-funding/${txId}`);
+                          if (govResp.ok) {
+                            const gov = await govResp.json();
+                            appointment.paymentTransactionId = { _id: txId, paymentMethod: 'government', status: gov.status, funding: gov } as any;
+                            appointment.paymentStatus = mapClaimStatus(gov.status) as any;
+                          }
+                        } catch (e) {
+                          // ignore
+                        }
+                      }
+
+                      // 4) Final fallback: search receipts for this patient and match by appointmentId
+                      if (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'string') {
+                        try {
+                          if (user?.id) {
+                            const receipts: any[] = await paymentApi.getReceiptsByPatient(user.id);
+                            const found = receipts.find(r => r.appointmentId === appointment._id || r.appointmentId === String(appointment._id));
+                            if (found) {
+                              // If Stripe payment exists on the receipt, treat it as card
+                              if (found.paymentIntentId) {
+                                appointment.paymentTransactionId = {
+                                  _id: found.paymentTransactionId,
+                                  paymentMethod: 'card',
+                                  stripePaymentIntentId: found.paymentIntentId,
+                                  status: found.paymentStatus
+                                } as any;
+                                appointment.paymentStatus = found.paymentStatus ?? appointment.paymentStatus;
+                              } else if (found.paymentTransactionId) {
+                                // leave id but set paymentStatus
+                                appointment.paymentStatus = found.paymentStatus ?? appointment.paymentStatus;
+                                appointment.paymentTransactionId = found.paymentTransactionId ?? appointment.paymentTransactionId;
+                              } else {
+                                appointment.paymentStatus = found.paymentStatus ?? appointment.paymentStatus;
+                              }
+                            }
+                          }
+                        } catch (err2) {
+                          console.warn(`Payment fallback failed for appointment ${appointment._id}`, err2);
+                        }
+                      }
+                    }
+                  } catch (err) {
+                    console.warn('Enrich payment info failed for', appointment._id, err);
+                  }
+
+                  return appointment;
+                })
+              );
+
           console.log('Fetched appointments:', sortedAppointments);
-          console.log('First appointment doctorId:', sortedAppointments[0]?.doctorId);
           setAppointments(sortedAppointments);
         }
       } catch (error: any) {
@@ -103,6 +302,189 @@ const MyAppointments: React.FC = () => {
     fetchAppointments();
   }, [user]);
 
+  const calculateFeeBreakdown = (totalFee: number): FeeBreakdown => {
+    // Calculations:
+    // Total Fee = Doctor's Fee + Hospital Charge + VAT
+    // Doctor's Fee = Total Fee / 1.18
+    // Hospital Charge = (Total Fee * 0.1) / 1.18
+    // VAT = (Total Fee * 0.08) / 1.18
+    
+    const doctorFee = totalFee / 1.18;
+    const hospitalCharge = (totalFee * 0.1) / 1.18;
+    const vat = (totalFee * 0.08) / 1.18;
+    
+    return {
+      doctorFee: Math.round(doctorFee * 100) / 100,
+      hospitalCharge: Math.round(hospitalCharge * 100) / 100,
+      vat: Math.round(vat * 100) / 100,
+      totalFee: totalFee
+    };
+  };
+
+  const handlePaymentClick = (appointment: Appointment) => {
+    if (!appointment.consultationFee) {
+      console.error('No consultation fee found');
+      return;
+    }
+    
+    const breakdown = calculateFeeBreakdown(appointment.consultationFee);
+    setFeeBreakdown(breakdown);
+    setSelectedAppointment(appointment);
+    setModal({
+      isOpen: true,
+      type: 'payment',
+      appointmentId: appointment._id
+    });
+  };
+
+  const handleProceedToPay = async () => {
+    if (!selectedAppointment || !feeBreakdown) return;
+
+    try {
+      // Here you would integrate with your payment gateway
+      // For example, redirect to payment page or open payment modal
+      console.log('Processing payment for appointment:', selectedAppointment._id);
+      console.log('Amount:', feeBreakdown.totalFee);
+      
+      // Example: Redirect to payment page with appointment details
+      navigate('/payment', {
+        state: {
+          appointmentId: selectedAppointment._id,
+          amount: feeBreakdown.totalFee,
+          appointmentDetails: selectedAppointment,
+          feeBreakdown: feeBreakdown
+        }
+      });
+      
+      // Close the modal
+      setModal({ isOpen: false, type: null, appointmentId: null });
+      setSelectedAppointment(null);
+      setFeeBreakdown(null);
+    } catch (error) {
+      console.error('Error initiating payment:', error);
+    }
+  };
+
+  const handleViewPaymentDone = async (appointment: Appointment) => {
+    setPaymentDoneLoading(true);
+    setSelectedAppointment(appointment);
+    setModal({ isOpen: true, type: 'paymentDone', appointmentId: appointment._id });
+
+    const PAYMENT_BASE = 'http://localhost:5008/api';
+    const tx = appointment.paymentTransactionId as any;
+    const method = tx && typeof tx === 'object' ? tx.paymentMethod : undefined;
+
+    const details: PaymentDoneDetails = {
+      method: method || 'card',
+      status: tx?.status || appointment.paymentStatus || 'paid',
+      amount: appointment.consultationFee || 0,
+      transactionId: tx?._id || (typeof appointment.paymentTransactionId === 'string' ? appointment.paymentTransactionId : undefined),
+      paidAt: tx?.createdAt,
+    };
+
+    try {
+      // Try to fetch the full transaction from the payment service
+      const txResp = await fetch(`${PAYMENT_BASE}/payments/transactions/${appointment._id}`);
+      if (txResp.ok) {
+        const txData = await txResp.json();
+        details.transactionId = txData._id;
+        details.receiptNo = txData.receiptNo;
+        details.amount = txData.amount || details.amount;
+        details.method = txData.paymentMethod || details.method;
+        details.status = txData.status || details.status;
+        details.paidAt = txData.createdAt || details.paidAt;
+        details.stripePaymentIntentId = txData.stripePaymentIntentId;
+
+        // If it has insurance claim id, fetch insurance details
+        if (txData.insuranceClaimId) {
+          try {
+            const insResp = await fetch(`${PAYMENT_BASE}/insurance/insurance-claims/${txData.insuranceClaimId}`);
+            if (insResp.ok) {
+              const ins = await insResp.json();
+              details.method = 'insurance';
+              details.insuranceProvider = ins.insuranceProvider;
+              details.policyNumber = ins.policyNumber;
+              details.claimantName = ins.claimantName;
+              details.claimantId = ins.claimantId;
+              details.claimStatus = ins.status;
+              // Map insurance claim status to payment status
+              const insStatus = (ins.status || '').toLowerCase();
+              if (insStatus === 'approved') details.status = 'paid';
+              else if (insStatus === 'submitted' || insStatus === 'processing') details.status = 'pending';
+              else if (insStatus === 'rejected') details.status = 'failed';
+            }
+          } catch (e) { /* ignore */ }
+        }
+
+        // If it has government funding id, fetch government details
+        if (txData.governmentFundingId) {
+          try {
+            const govResp = await fetch(`${PAYMENT_BASE}/government/government-funding/${txData.governmentFundingId}`);
+            if (govResp.ok) {
+              const gov = await govResp.json();
+              details.method = 'government';
+              details.programType = gov.programType;
+              details.beneficiaryId = gov.beneficiaryId;
+              details.beneficiaryName = gov.beneficiaryName;
+              details.referenceNumber = gov.referenceNumber;
+              details.fundingStatus = gov.status;
+              // Map government funding status to payment status
+              const govStatus = (gov.status || '').toLowerCase();
+              if (govStatus === 'approved') details.status = 'paid';
+              else if (govStatus === 'submitted' || govStatus === 'processing') details.status = 'pending';
+              else if (govStatus === 'rejected') details.status = 'failed';
+            }
+          } catch (e) { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not fetch transaction details', e);
+    }
+
+    // Fallback: if method came from the enriched tx object already
+    if (tx && typeof tx === 'object') {
+      if (tx.claim && !details.insuranceProvider) {
+        details.method = 'insurance';
+        details.insuranceProvider = tx.claim.insuranceProvider;
+        details.policyNumber = tx.claim.policyNumber;
+        details.claimantName = tx.claim.claimantName;
+        details.claimantId = tx.claim.claimantId;
+        details.claimStatus = tx.claim.status;
+        const fbInsStatus = (tx.claim.status || '').toLowerCase();
+        if (fbInsStatus === 'approved') details.status = 'paid';
+        else if (fbInsStatus === 'submitted' || fbInsStatus === 'processing') details.status = 'pending';
+      }
+      if (tx.funding && !details.programType) {
+        details.method = 'government';
+        details.programType = tx.funding.programType;
+        details.beneficiaryId = tx.funding.beneficiaryId;
+        details.beneficiaryName = tx.funding.beneficiaryName;
+        details.referenceNumber = tx.funding.referenceNumber;
+        details.fundingStatus = tx.funding.status;
+        const fbGovStatus = (tx.funding.status || '').toLowerCase();
+        if (fbGovStatus === 'approved') details.status = 'paid';
+        else if (fbGovStatus === 'submitted' || fbGovStatus === 'processing') details.status = 'pending';
+      }
+      if (tx.stripePaymentIntentId && !details.stripePaymentIntentId) {
+        details.stripePaymentIntentId = tx.stripePaymentIntentId;
+      }
+    }
+
+    // Try to get receipt info if we don't have receiptNo yet
+    if (!details.receiptNo && user?.id) {
+      try {
+        const receipts: any[] = await paymentApi.getReceiptsByPatient(user.id);
+        const found = receipts.find(r => r.appointmentId === appointment._id || r.appointmentId === String(appointment._id));
+        if (found) {
+          details.receiptNo = found.receiptNo;
+          details.paidAt = details.paidAt || found.paymentDate || found.createdAt;
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    setPaymentDoneDetails(details);
+    setPaymentDoneLoading(false);
+  };
 
   const handleReschedule = async () => {
     if (!modal.appointmentId) return;
@@ -147,18 +529,50 @@ const MyAppointments: React.FC = () => {
   };
 
   const handleCancel = async () => {
-    if (!modal.appointmentId) return;
+    console.log('handleCancel called with modal:', modal);
+    if (!modal.appointmentId) {
+      console.log('No appointmentId found, returning');
+      return;
+    }
 
     try {
+      console.log('Sending delete request to /appointment/' + modal.appointmentId);
       const response = await api.delete(`/appointment/${modal.appointmentId}`);
       const data = response.data;
+      console.log('Delete response:', data);
 
-      if (data.success) {
-        // Close modal and refresh appointments
+      // Consider HTTP-level success as success even if backend doesn't include `success: true`
+      if (response.status >= 200 && response.status < 300) {
+        // If backend returned updated appointment in `data.data`, merge it
+        if (data && data.success && data.data) {
+          const updated = data.data;
+          setAppointments(prevAppointments =>
+            prevAppointments.map(apt =>
+              apt._id === modal.appointmentId
+                ? { ...apt, ...updated }
+                : apt
+            )
+          );
+        }
+        // If backend explicitly deleted the appointment, remove it from state
+        else if (data && data.message && String(data.message).toLowerCase().includes('deleted')) {
+          setAppointments(prevAppointments => prevAppointments.filter(apt => apt._id !== modal.appointmentId));
+        }
+        // Otherwise fallback to marking cancelled so UI moves it to history
+        else {
+          setAppointments(prevAppointments =>
+            prevAppointments.map(apt =>
+              apt._id === modal.appointmentId
+                ? { ...apt, status: 'cancelled' as const }
+                : apt
+            )
+          );
+        }
+
+        // Close modal
         setModal({ isOpen: false, type: null, appointmentId: null });
-        window.location.reload();
       } else {
-        console.error('Failed to cancel appointment:', data.message);
+        console.error('Failed to cancel appointment:', data.message || data);
       }
     } catch (error) {
       console.error('Error cancelling appointment:', error);
@@ -169,6 +583,494 @@ const MyAppointments: React.FC = () => {
   const Modal = () => {
     if (!modal.isOpen) return null;
 
+    // Payment Modal
+    if (modal.type === 'payment' && selectedAppointment && feeBreakdown) {
+      const tx = selectedAppointment.paymentTransactionId as any;
+      const paymentStatus = tx && typeof tx === 'object' ? (tx.status ?? selectedAppointment.paymentStatus) : selectedAppointment.paymentStatus;
+      const isPaymentFailed = paymentStatus && String(paymentStatus).toLowerCase() === 'failed';
+
+      return (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full mx-auto shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-green-500 to-teal-500 p-6">
+              <h3 className="text-2xl font-bold text-white">Payment Details</h3>
+              <p className="text-green-100 mt-1">Appointment #{selectedAppointment.queueNumber}</p>
+            </div>
+            
+            <div className="p-6">
+              {/* Appointment Summary */}
+              <div className="mb-6 pb-4 border-b border-gray-200">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Appointment Summary</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Doctor:</span>
+                    <span className="font-medium text-gray-900">{selectedAppointment.doctorName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Date:</span>
+                    <span className="font-medium text-gray-900">
+                      {format(new Date(selectedAppointment.date), 'MMM dd, yyyy')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Time:</span>
+                    <span className="font-medium text-gray-900">{selectedAppointment.time}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fee Breakdown */}
+              <div className="mb-6">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Fee Breakdown</h4>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2">
+                    <div className="flex items-center space-x-2">
+                      <UserIcon className="h-5 w-5 text-blue-500" />
+                      <span className="text-gray-700">Doctor's Fee</span>
+                    </div>
+                    <span className="font-medium text-gray-900">${feeBreakdown.doctorFee.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <div className="flex items-center space-x-2">
+                      <BuildingOfficeIcon className="h-5 w-5 text-purple-500" />
+                      <span className="text-gray-700">Hospital Charge (10%)</span>
+                    </div>
+                    <span className="font-medium text-gray-900">${feeBreakdown.hospitalCharge.toLocaleString()}</span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center py-2 border-t border-gray-100">
+                    <div className="flex items-center space-x-2">
+                      <ReceiptPercentIcon className="h-5 w-5 text-orange-500" />
+                      <span className="text-gray-700">VAT (8%)</span>
+                    </div>
+                    <span className="font-medium text-gray-900">${feeBreakdown.vat.toLocaleString()}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Total Amount */}
+              <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-teal-50 rounded-xl">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-gray-600">Total Amount to Pay</p>
+                    <p className="text-2xl font-bold text-green-600">${feeBreakdown.totalFee.toLocaleString()}</p>
+                  </div>
+                  <CurrencyDollarIcon className="h-10 w-10 text-green-500 opacity-50" />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    setModal({ isOpen: false, type: null, appointmentId: null });
+                    setSelectedAppointment(null);
+                    setFeeBreakdown(null);
+                  }}
+                  className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={handleProceedToPay}
+                  disabled={isPaymentFailed}
+                  className={`flex-1 px-6 py-3 rounded-xl font-medium flex items-center justify-center space-x-2 transition-all ${isPaymentFailed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  {isPaymentFailed ? (
+                    <>
+                      <XCircleIcon className="h-5 w-5 text-red-600" />
+                      <span>Payment Failed</span>
+                    </>
+                  ) : (
+                    <>
+                      <CreditCardIcon className="h-5 w-5" />
+                      <span>Proceed to Pay</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Payment Done Modal
+    if (modal.type === 'paymentDone' && selectedAppointment) {
+      const closePaymentDone = () => {
+        setModal({ isOpen: false, type: null, appointmentId: null });
+        setSelectedAppointment(null);
+        setPaymentDoneDetails(null);
+      };
+
+      const statusNorm = (paymentDoneDetails?.status || '').toLowerCase().replace('succeeded', 'paid');
+      const isPaid = statusNorm === 'paid' || statusNorm === 'approved';
+      const isPending = statusNorm === 'pending' || statusNorm === 'submitted' || statusNorm === 'processing';
+
+      const methodGradient =
+        paymentDoneDetails?.method === 'insurance'
+          ? 'from-indigo-500 to-blue-600'
+          : paymentDoneDetails?.method === 'government'
+          ? 'from-emerald-500 to-teal-600'
+          : 'from-green-500 to-teal-500';
+
+      const methodIcon =
+        paymentDoneDetails?.method === 'insurance'
+          ? <ShieldCheckIcon className="h-7 w-7 text-white" />
+          : paymentDoneDetails?.method === 'government'
+          ? <BuildingOfficeIcon className="h-7 w-7 text-white" />
+          : <CreditCardIcon className="h-7 w-7 text-white" />;
+
+      const methodLabel =
+        paymentDoneDetails?.method === 'insurance'
+          ? 'Insurance Claim'
+          : paymentDoneDetails?.method === 'government'
+          ? 'Government Funding'
+          : 'Card Payment';
+
+      return (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full mx-auto shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className={`bg-gradient-to-r ${methodGradient} p-6`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 bg-white/20 rounded-xl">{methodIcon}</div>
+                  <div>
+                    <h3 className="text-2xl font-bold text-white">Payment Details</h3>
+                    <p className="text-white/80 text-sm mt-0.5">{methodLabel}</p>
+                  </div>
+                </div>
+                <button onClick={closePaymentDone} className="p-1.5 bg-white/20 rounded-lg hover:bg-white/30 transition-colors">
+                  <XMarkIcon className="h-5 w-5 text-white" />
+                </button>
+              </div>
+            </div>
+
+            {paymentDoneLoading ? (
+              <div className="p-10 flex flex-col items-center justify-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-green-600 mb-3"></div>
+                <p className="text-gray-500">Loading payment details...</p>
+              </div>
+            ) : paymentDoneDetails ? (
+              <div className="p-6 space-y-5">
+                {/* Status Banner */}
+                <div className={`flex items-center space-x-3 p-4 rounded-xl ${isPaid ? 'bg-green-50 border border-green-200' : isPending ? 'bg-yellow-50 border border-yellow-200' : 'bg-red-50 border border-red-200'}`}>
+                  {isPaid ? <CheckCircleIcon className="h-8 w-8 text-green-500 flex-shrink-0" /> : isPending ? <ExclamationTriangleIcon className="h-8 w-8 text-yellow-500 flex-shrink-0" /> : <XCircleIcon className="h-8 w-8 text-red-500 flex-shrink-0" />}
+                  <div>
+                    <p className={`font-bold text-lg ${isPaid ? 'text-green-700' : isPending ? 'text-yellow-700' : 'text-red-700'}`}>
+                      {isPaid ? 'Payment Successful' : isPending ? 'Payment Pending' : 'Payment Failed'}
+                    </p>
+                    <p className={`text-sm ${isPaid ? 'text-green-600' : isPending ? 'text-yellow-600' : 'text-red-600'}`}>
+                      {isPaid ? 'Your payment has been processed successfully' : isPending ? 'Your payment is being processed' : 'There was an issue with your payment'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Amount */}
+                <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl text-center">
+                  <p className="text-sm text-gray-500 mb-1">Amount Paid</p>
+                  <p className="text-3xl font-bold text-gray-900">${paymentDoneDetails.amount.toLocaleString()}</p>
+                </div>
+
+                {/* Appointment Info */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Appointment Info</h4>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Doctor</span>
+                      <span className="text-sm font-medium text-gray-900">{selectedAppointment.doctorName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Date</span>
+                      <span className="text-sm font-medium text-gray-900">{format(new Date(selectedAppointment.date), 'MMM dd, yyyy')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Time</span>
+                      <span className="text-sm font-medium text-gray-900">{selectedAppointment.time}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Queue #</span>
+                      <span className="text-sm font-medium text-gray-900">#{selectedAppointment.queueNumber}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Transaction Details */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Transaction Details</h4>
+                  <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-gray-500">Payment Method</span>
+                      <span className="text-sm font-medium text-gray-900 capitalize flex items-center space-x-1">
+                        {paymentDoneDetails.method === 'card' && <CreditCardIcon className="h-4 w-4 text-green-500" />}
+                        {paymentDoneDetails.method === 'insurance' && <ShieldCheckIcon className="h-4 w-4 text-indigo-500" />}
+                        {paymentDoneDetails.method === 'government' && <BuildingOfficeIcon className="h-4 w-4 text-emerald-500" />}
+                        <span>{methodLabel}</span>
+                      </span>
+                    </div>
+                    {paymentDoneDetails.transactionId && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Transaction ID</span>
+                        <span className="text-xs font-mono text-gray-700 bg-gray-200 px-2 py-0.5 rounded">{paymentDoneDetails.transactionId.slice(-12)}</span>
+                      </div>
+                    )}
+                    {paymentDoneDetails.receiptNo && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Receipt No</span>
+                        <span className="text-sm font-medium text-gray-900">{paymentDoneDetails.receiptNo}</span>
+                      </div>
+                    )}
+                    {paymentDoneDetails.stripePaymentIntentId && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Stripe Ref</span>
+                        <span className="text-xs font-mono text-gray-700 bg-gray-200 px-2 py-0.5 rounded">...{paymentDoneDetails.stripePaymentIntentId.slice(-10)}</span>
+                      </div>
+                    )}
+                    {paymentDoneDetails.paidAt && (
+                      <div className="flex justify-between">
+                        <span className="text-sm text-gray-500">Paid At</span>
+                        <span className="text-sm font-medium text-gray-900">{format(new Date(paymentDoneDetails.paidAt), 'MMM dd, yyyy hh:mm a')}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Insurance Details */}
+                {paymentDoneDetails.method === 'insurance' && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-3 flex items-center space-x-1">
+                      <ShieldCheckIcon className="h-4 w-4" />
+                      <span>Insurance Details</span>
+                    </h4>
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 space-y-2">
+                      {paymentDoneDetails.insuranceProvider && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Provider</span>
+                          <span className="text-sm font-semibold text-indigo-900">{paymentDoneDetails.insuranceProvider}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.policyNumber && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Policy Number</span>
+                          <span className="text-sm font-medium text-indigo-900">{paymentDoneDetails.policyNumber}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.claimantName && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Claimant Name</span>
+                          <span className="text-sm font-medium text-indigo-900">{paymentDoneDetails.claimantName}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.claimantId && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-indigo-600">Claimant ID</span>
+                          <span className="text-sm font-medium text-indigo-900">{paymentDoneDetails.claimantId}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.claimStatus && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-indigo-600">Claim Status</span>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${
+                            paymentDoneDetails.claimStatus === 'approved' ? 'bg-green-100 text-green-700' :
+                            paymentDoneDetails.claimStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>{paymentDoneDetails.claimStatus}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Government Funding Details */}
+                {paymentDoneDetails.method === 'government' && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3 flex items-center space-x-1">
+                      <BuildingOfficeIcon className="h-4 w-4" />
+                      <span>Government Funding Details</span>
+                    </h4>
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 space-y-2">
+                      {paymentDoneDetails.programType && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Program Type</span>
+                          <span className="text-sm font-semibold text-emerald-900">{paymentDoneDetails.programType}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.beneficiaryName && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Beneficiary Name</span>
+                          <span className="text-sm font-medium text-emerald-900">{paymentDoneDetails.beneficiaryName}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.beneficiaryId && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Beneficiary ID</span>
+                          <span className="text-sm font-medium text-emerald-900">{paymentDoneDetails.beneficiaryId}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.referenceNumber && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-emerald-600">Reference Number</span>
+                          <span className="text-sm font-medium text-emerald-900">{paymentDoneDetails.referenceNumber}</span>
+                        </div>
+                      )}
+                      {paymentDoneDetails.fundingStatus && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-emerald-600">Funding Status</span>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full capitalize ${
+                            paymentDoneDetails.fundingStatus === 'approved' ? 'bg-green-100 text-green-700' :
+                            paymentDoneDetails.fundingStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                            'bg-yellow-100 text-yellow-700'
+                          }`}>{paymentDoneDetails.fundingStatus}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Fee Breakdown */}
+                {selectedAppointment.consultationFee && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Fee Breakdown</h4>
+                    <div className="bg-gray-50 rounded-xl p-4 space-y-2">
+                      {(() => {
+                        const bd = calculateFeeBreakdown(selectedAppointment.consultationFee!);
+                        return (
+                          <>
+                            <div className="flex justify-between">
+                              <div className="flex items-center space-x-2">
+                                <UserIcon className="h-4 w-4 text-blue-500" />
+                                <span className="text-sm text-gray-600">Doctor's Fee</span>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">${bd.doctorFee.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <div className="flex items-center space-x-2">
+                                <BuildingOfficeIcon className="h-4 w-4 text-purple-500" />
+                                <span className="text-sm text-gray-600">Hospital Charge (10%)</span>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">${bd.hospitalCharge.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <div className="flex items-center space-x-2">
+                                <ReceiptPercentIcon className="h-4 w-4 text-orange-500" />
+                                <span className="text-sm text-gray-600">VAT (8%)</span>
+                              </div>
+                              <span className="text-sm font-medium text-gray-900">${bd.vat.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between pt-2 border-t border-gray-200">
+                              <span className="text-sm font-bold text-gray-700">Total</span>
+                              <span className="text-sm font-bold text-green-600">${bd.totalFee.toLocaleString()}</span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Close Button */}
+                <button
+                  onClick={closePaymentDone}
+                  className={`w-full px-4 py-3 text-white rounded-xl font-medium transition-colors bg-gradient-to-r ${methodGradient} hover:opacity-90`}
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <div className="p-10 text-center text-gray-400">No payment details available.</div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Prescription Modal
+    if (modal.type === 'prescription' && selectedPrescription && selectedDiagnosis) {
+      return (
+        <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full mx-auto shadow-2xl overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-500 to-blue-600 p-6">
+              <h3 className="text-2xl font-bold text-white">Prescription Details</h3>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              {/* Medicine Information */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Medicine</h4>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm text-gray-600">Medicine Name</p>
+                    <p className="text-lg font-semibold text-gray-900">{selectedPrescription.name}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Dosage</p>
+                      <p className="font-medium text-gray-900">{selectedPrescription.dosage}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Frequency</p>
+                      <p className="font-medium text-gray-900">{selectedPrescription.frequency}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Duration & Quantity */}
+              <div className="border-t border-gray-200 pt-4">
+                <h4 className="text-sm font-semibold text-gray-500 uppercase mb-3">Usage & Quantity</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Duration</p>
+                    <p className="font-medium text-gray-900">{selectedPrescription.duration}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Quantity</p>
+                    <p className="font-medium text-gray-900">{selectedPrescription.quantity} units</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Price */}
+              <div className="border-t border-gray-200 pt-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-gray-600">Price per unit</p>
+                  <p className="text-lg font-semibold text-blue-600">${selectedPrescription.price.toLocaleString()}</p>
+                </div>
+                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-200">
+                  <p className="text-sm font-semibold text-gray-700">Total for this medicine</p>
+                  <p className="text-xl font-bold text-blue-600">${(selectedPrescription.price * selectedPrescription.quantity).toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Diagnosis Info */}
+              {selectedDiagnosis?.diagnosis && (
+                <div className="border-t border-gray-200 pt-4">
+                  <h4 className="text-sm font-semibold text-gray-500 uppercase mb-2">Diagnosis</h4>
+                  <p className="text-sm text-gray-700">{selectedDiagnosis.diagnosis}</p>
+                </div>
+              )}
+
+              {/* Close Button */}
+              <button
+                onClick={() => {
+                  setModal({ isOpen: false, type: null, appointmentId: null });
+                  setSelectedPrescription(null);
+                  setSelectedDiagnosis(null);
+                }}
+                className="w-full px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Reschedule/Cancel Modal
     return (
       <div className="fixed inset-0 backdrop-blur-sm bg-black/30 flex items-center justify-center z-50">
         <div className="bg-white/90 backdrop-filter backdrop-blur-sm rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
@@ -190,7 +1092,16 @@ const MyAppointments: React.FC = () => {
               No, Keep it
             </button>
             <button
-              onClick={modal.type === 'reschedule' ? handleReschedule : handleCancel}
+              onClick={async () => {
+                console.log('Button clicked - modal.type:', modal.type);
+                if (modal.type === 'reschedule') {
+                  console.log('Calling handleReschedule');
+                  await handleReschedule();
+                } else {
+                  console.log('Calling handleCancel');
+                  await handleCancel();
+                }
+              }}
               className={`px-4 py-2 text-white rounded-lg transition-colors ${modal.type === 'reschedule'
                 ? 'bg-blue-600 hover:bg-blue-700'
                 : 'bg-red-600 hover:bg-red-700'
@@ -222,6 +1133,77 @@ const MyAppointments: React.FC = () => {
       case 'cancelled': return 'text-red-600 bg-red-50 border-red-200';
       default: return 'text-gray-600 bg-gray-50 border-gray-200';
     }
+  };
+
+  const getPaymentStatusBadge = (paymentStatus?: string) => {
+    const status = paymentStatus?.toLowerCase().replace('succeeded', 'paid');
+    
+    if (status === 'paid') {
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+          <CheckCircleIcon className="h-3 w-3" />
+          <span>Paid</span>
+        </div>
+      );
+    } else if (status === 'pending') {
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-yellow-100 text-yellow-700 rounded-lg text-xs">
+          <ExclamationTriangleIcon className="h-3 w-3" />
+          <span>Pending</span>
+        </div>
+      );
+    } else if (status === 'failed') {
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-red-100 text-red-700 rounded-lg text-xs">
+          <XCircleIcon className="h-3 w-3" />
+          <span>Payment Failed</span>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const getPaymentInfoBadge = (appointment: Appointment) => {
+    const tx = appointment.paymentTransactionId as any;
+    const method = tx && typeof tx === 'object' ? tx.paymentMethod : undefined;
+    const status = tx && typeof tx === 'object' ? tx.status : appointment.paymentStatus;
+
+    if (!method && !status) return <span className="text-gray-400 text-xs">-</span>;
+
+    if (method === 'government') {
+      const label = status === 'succeeded' || status === 'paid' ? 'Government Paid' : status === 'pending' ? 'Government Pending' : 'Government';
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+          <ShieldCheckIcon className="h-3 w-3" />
+          <span>{label}</span>
+        </div>
+      );
+    }
+
+    if (method === 'insurance') {
+      const label = status === 'succeeded' || status === 'paid' ? 'Insurance Paid' : status === 'pending' ? 'Insurance Pending' : 'Insurance';
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs">
+          <ReceiptPercentIcon className="h-3 w-3" />
+          <span>{label}</span>
+        </div>
+      );
+    }
+
+    if (method === 'card') {
+      const label = status === 'succeeded' || status === 'paid' ? 'Paid (Card)' : status === 'pending' ? 'Pending' : 'Failed';
+      return (
+        <div className="inline-flex items-center space-x-1 px-2 py-1 bg-green-100 text-green-700 rounded-lg text-xs">
+          <CreditCardIcon className="h-3 w-3" />
+          <span>{label}</span>
+        </div>
+      );
+    }
+
+    // Fallback to generic payment status badge
+    if (status) return getPaymentStatusBadge(status);
+
+    return <span className="text-gray-400 text-xs">-</span>;
   };
 
   return (
@@ -369,9 +1351,12 @@ const MyAppointments: React.FC = () => {
 
                               {/* Appointment Details */}
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center space-x-3 mb-3">
-                                  <UserIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
-                                  <h3 className="text-xl font-semibold text-gray-900">{appointment.doctorName}</h3>
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center space-x-3">
+                                    <UserIcon className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                                    <h3 className="text-xl font-semibold text-gray-900">{appointment.doctorName}</h3>
+                                  </div>
+                                  {getPaymentStatusBadge(appointment.paymentStatus)}
                                 </div>
 
                                 <div className="space-y-3 mb-4">
@@ -390,6 +1375,19 @@ const MyAppointments: React.FC = () => {
                                     <div className="min-w-0 flex-1 text-left">
                                       <p className="text-sm text-gray-600">Time</p>
                                       <p className="font-medium text-gray-900 text-left">{appointment.time}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Consultation Fee */}
+                                  <div className="flex items-start space-x-3">
+                                    <div className="p-1.5 bg-green-100 rounded-lg">
+                                      <CurrencyDollarIcon className="h-5 w-5 text-green-600" />
+                                    </div>
+                                    <div className="min-w-0 flex-1 text-left">
+                                      <p className="text-sm text-gray-600">Consultation Fee</p>
+                                      <p className="font-semibold text-gray-900">
+                                        ${appointment.consultationFee?.toLocaleString() || '0'}
+                                      </p>
                                     </div>
                                   </div>
                                 </div>
@@ -420,6 +1418,23 @@ const MyAppointments: React.FC = () => {
                             {/* Action Buttons */}
                             {appointment.status === 'booked' && (
                               <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
+                                {appointment.paymentStatus !== 'paid' ? (
+                                  <button
+                                    onClick={() => handlePaymentClick(appointment)}
+                                    className="flex items-center justify-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 w-full sm:w-auto font-medium"
+                                  >
+                                    <CreditCardIcon className="h-4 w-4" />
+                                    <span>Pay Now</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    onClick={() => handleViewPaymentDone(appointment)}
+                                    className="flex items-center justify-center space-x-2 px-5 py-2.5 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-lg hover:from-teal-600 hover:to-emerald-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 w-full sm:w-auto font-medium"
+                                  >
+                                    <BanknotesIcon className="h-4 w-4" />
+                                    <span>View Payment</span>
+                                  </button>
+                                )}
                                 <button
                                   onClick={() => setModal({
                                     isOpen: true,
@@ -452,8 +1467,8 @@ const MyAppointments: React.FC = () => {
               </div>
             )}
 
-            {/* Completed Appointments History */}
-            {appointments.filter(a => a.status === 'completed' || a.status === 'cancelled').length > 0 && (
+            {/* All Appointments History */}
+            {appointments.length > 0 && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Appointment History</h2>
 
@@ -472,16 +1487,28 @@ const MyAppointments: React.FC = () => {
                             Date & Time
                           </th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Fee
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Payment
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Status
+                          </th>
+                        
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Prescriptions
                           </th>
                           <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
                             Notes
+                          </th>
+                          <th scope="col" className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Actions
                           </th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-100">
                         {appointments
-                          .filter(a => a.status === 'completed' || a.status === 'cancelled')
                           .map((appointment) => (
                             <tr key={appointment._id} className="hover:bg-gray-50 transition-colors duration-200">
                               {/* Queue Number */}
@@ -517,6 +1544,28 @@ const MyAppointments: React.FC = () => {
                                 </div>
                               </td>
 
+                              {/* Consultation Fee */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                <div className="text-sm font-semibold text-green-600">
+                                  ${appointment.consultationFee?.toLocaleString() || '0'}
+                                </div>
+                              </td>
+
+                              {/* Payment */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                {(appointment.paymentStatus === 'paid' || (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'object')) ? (
+                                  <button
+                                    onClick={() => handleViewPaymentDone(appointment)}
+                                    className="hover:scale-105 transition-transform cursor-pointer"
+                                    title="Click to view payment details"
+                                  >
+                                    {getPaymentInfoBadge(appointment)}
+                                  </button>
+                                ) : (
+                                  getPaymentInfoBadge(appointment)
+                                )}
+                              </td>
+
                               {/* Status */}
                               <td className="px-4 py-4 whitespace-nowrap">
                                 <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-lg border ${getStatusColor(appointment.status)}`}>
@@ -525,6 +1574,39 @@ const MyAppointments: React.FC = () => {
                                     {appointment.status.replace('_', ' ')}
                                   </span>
                                 </div>
+                              </td>
+
+                              
+
+                              {/* Prescriptions */}
+                              <td className="px-4 py-4">
+                                {appointment.diagnosis?.drugs && appointment.diagnosis.drugs.length > 0 ? (
+                                  <div className="text-xs space-y-2 max-w-sm">
+                                    {appointment.diagnosis.drugs.map((drug, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={() => {
+                                          setSelectedDiagnosis(appointment.diagnosis!);
+                                          setSelectedPrescription(drug);
+                                          setModal({
+                                            isOpen: true,
+                                            type: 'prescription',
+                                            appointmentId: appointment._id
+                                          });
+                                        }}
+                                        className="w-full text-left bg-blue-50 border border-blue-200 rounded p-2 hover:bg-blue-100 hover:border-blue-300 transition-colors cursor-pointer"
+                                      >
+                                        <div className="font-semibold text-blue-900">{drug.name}</div>
+                                        <div className="text-blue-700">{drug.dosage} • {drug.frequency}</div>
+                                        {drug.duration && (
+                                          <div className="text-blue-600 text-xs mt-1">Duration: {drug.duration}</div>
+                                        )}
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">-</span>
+                                )}
                               </td>
 
                               {/* Notes */}
@@ -542,6 +1624,29 @@ const MyAppointments: React.FC = () => {
                                   )}
                                 </div>
                               </td>
+
+                              {/* Actions */}
+                              <td className="px-4 py-4 whitespace-nowrap">
+                                {(appointment.paymentStatus === 'paid' || (appointment.paymentTransactionId && typeof appointment.paymentTransactionId === 'object')) ? (
+                                  <button
+                                    onClick={() => handleViewPaymentDone(appointment)}
+                                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-teal-500 to-emerald-600 text-white rounded-lg hover:from-teal-600 hover:to-emerald-700 transition-all duration-200 shadow-sm hover:shadow-md text-xs font-medium"
+                                  >
+                                    <BanknotesIcon className="h-3.5 w-3.5" />
+                                    <span>View Payment</span>
+                                  </button>
+                                ) : appointment.paymentStatus === 'pending' && appointment.status !== 'cancelled' ? (
+                                  <button
+                                    onClick={() => handlePaymentClick(appointment)}
+                                    className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-200 shadow-sm hover:shadow-md text-xs font-medium"
+                                  >
+                                    <CreditCardIcon className="h-3.5 w-3.5" />
+                                    <span>Pay Now</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-gray-400 text-xs">-</span>
+                                )}
+                              </td>
                             </tr>
                           ))}
                       </tbody>
@@ -555,7 +1660,7 @@ const MyAppointments: React.FC = () => {
       </main>
 
       <Footer />
-      <Modal />
+      {modal.isOpen && <Modal />}
     </div>
   );
 };
