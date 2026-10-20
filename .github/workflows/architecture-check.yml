@@ -29,8 +29,8 @@ jobs:
 
       - name: Classify change and notify Component 3
         env:
-          C3_URL: ${{ secrets.C3_URL }}
-          C3_API_KEY: ${{ secrets.C3_API_KEY }}
+          C3_URL: ${{ secrets.C4_URL }}
+          C3_API_KEY: ${{ secrets.C4_API_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node .c3/classify-and-trigger.js changes.json
