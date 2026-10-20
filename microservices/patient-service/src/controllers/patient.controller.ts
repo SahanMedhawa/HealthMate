@@ -1039,3 +1039,4 @@ export const getUserByIdPublic = async (req: Request, res: Response): Promise<vo
         res.status(500).json({ success: false, message: "Internal server error." });
     }
 };
+// uses configuration
