@@ -35,25 +35,3 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node .c3/classify-and-trigger.js changes.json
         
-      - name: Generate conformance graph
-        env:
-          AKEGP_API_URL: ${{ vars.AKEGP_API_URL }}
-          AKEGP_WEB_URL: ${{ vars.AKEGP_WEB_URL }}
-          REPOSITORY_URL: ${{ github.event.pull_request.head.repo.html_url }}
-          REPOSITORY_ID: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          response=$(curl --fail-with-body --silent --show-error \
-            -H 'Content-Type: application/json' \
-            -d "$(jq -n --arg id "$REPOSITORY_ID" --arg url "$REPOSITORY_URL" --arg ref "$HEAD_SHA" \
-              '{repositoryId:$id,repositoryUrl:$url,ref:$ref}')" \
-            "${AKEGP_API_URL%/}/api/conformance/graphs/import")
-          scan_id=$(jq -er '.scan.scanId' <<< "$response")
-          graph_url="${AKEGP_WEB_URL%/}/conformance/graph/${scan_id}"
-
-          {
-            echo "## AKEGP conformance graph"
-            echo
-            echo "Generated for PR commit \`${HEAD_SHA}\`. [Open graph](${graph_url})"
-          } >> "$GITHUB_STEP_SUMMARY"
