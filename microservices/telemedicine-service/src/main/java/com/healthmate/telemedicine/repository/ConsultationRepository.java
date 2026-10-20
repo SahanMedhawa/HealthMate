@@ -21,3 +21,9 @@ public interface ConsultationRepository extends JpaRepository<Consultation, Long
 
     boolean existsByAppointmentId(String appointmentId);
 }
+
+import com.healthmate.telemedicine.controller.ConsultationController;
+
+import com.healthmate.telemedicine.service.ConsultationService;
+
+import com.healthmate.telemedicine.service.ConsultationService;
