@@ -25,3 +25,5 @@ public interface ConsultationRepository extends JpaRepository<Consultation, Long
 import com.healthmate.telemedicine.controller.ConsultationController;
 
 import com.healthmate.telemedicine.service.ConsultationService;
+
+import com.healthmate.telemedicine.service.ConsultationService;
