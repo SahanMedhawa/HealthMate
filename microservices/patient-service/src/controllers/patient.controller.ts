@@ -1039,4 +1039,4 @@ export const getUserByIdPublic = async (req: Request, res: Response): Promise<vo
         res.status(500).json({ success: false, message: "Internal server error." });
     }
 };
-const appointmentUrl = "http://localhost:5003/api/appointments";
+// uses configuration
