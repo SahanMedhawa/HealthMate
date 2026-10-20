@@ -106,3 +106,5 @@ HealthMate/
 - Admins: Username/password → JWT
 - All services share `JWT_SECRET` for token verification
 - Zero circular dependencies — each service has its own auth middleware copy
+
+Pipeline test 3 with separate database.
