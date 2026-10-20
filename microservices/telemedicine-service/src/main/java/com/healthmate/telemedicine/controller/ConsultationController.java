@@ -118,4 +118,4 @@ public class ConsultationController {
     }
 }
 
-import jakarta.persistence.EntityManager;
+import java.util.List;
