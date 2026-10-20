@@ -1,0 +1,49 @@
+name: PR Conformance Graph
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  conformance-graph:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate conformance graph for PR head
+        id: scan
+        env:
+          AKEGP_API_URL: ${{ vars.AKEGP_API_URL }}
+          REPOSITORY_URL: ${{ github.event.pull_request.head.repo.html_url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          REPOSITORY_ID: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d "$(jq -n --arg id "$REPOSITORY_ID" --arg url "$REPOSITORY_URL" --arg ref "$HEAD_SHA" \
+              '{repositoryId:$id,repositoryUrl:$url,ref:$ref}')" \
+            "${AKEGP_API_URL%/}/api/conformance/graphs/import")
+          scan_id=$(jq -er '.scan.scanId' <<< "$response")
+          echo "scan_id=$scan_id" >> "$GITHUB_OUTPUT"
+
+      - name: Add graph link to pull request
+        uses: actions/github-script@v7
+        env:
+          SCAN_ID: ${{ steps.scan.outputs.scan_id }}
+          AKEGP_WEB_URL: ${{ vars.AKEGP_WEB_URL }}
+        with:
+          script: |
+            const url = `${process.env.AKEGP_WEB_URL.replace(/\/$/, '')}/conformance/graph/${process.env.SCAN_ID}`;
+            const body = `### AKEGP conformance graph\n\nThe graph was generated from this PR's head commit. [Open graph](${url})`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const previous = comments.find(comment => comment.user.type === 'Bot' && comment.body.includes('AKEGP conformance graph'));
+            if (previous) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
