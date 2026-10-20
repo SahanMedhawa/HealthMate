@@ -118,4 +118,4 @@ public class ConsultationController {
     }
 }
 
-import com.healthmate.telemedicine.repository.*;
+import jakarta.persistence.EntityManager;
