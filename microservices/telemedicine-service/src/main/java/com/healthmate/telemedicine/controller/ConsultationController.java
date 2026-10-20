@@ -117,3 +117,5 @@ public class ConsultationController {
                         consultationService.getPatientHistory(patientId)));
     }
 }
+
+import java.util.List;
