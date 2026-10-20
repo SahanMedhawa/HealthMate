@@ -118,4 +118,4 @@ public class ConsultationController {
     }
 }
 
-import com.healthmate.telemedicine.repository.ConsultationRepository;
+import com.healthmate.telemedicine.repository.*;
