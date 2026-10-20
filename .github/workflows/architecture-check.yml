@@ -1,0 +1,36 @@
+name: Architecture Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Collect change details
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          INCLUDE_LINES: ${{ vars.INCLUDE_LINES }}   # optional repo variable: "true" sends added/removed lines per file
+          INCLUDE_PATCH: ${{ vars.INCLUDE_PATCH }}   # optional repo variable: "true" sends the raw diff text too
+        run: node .c3/collect-changes.js "$BASE_SHA" "$HEAD_SHA" changes.json
+
+      - name: Classify change and notify Component 3
+        env:
+          C3_URL: ${{ secrets.C3_URL }}
+          C3_API_KEY: ${{ secrets.C3_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node .c3/classify-and-trigger.js changes.json
