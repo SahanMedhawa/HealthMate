@@ -108,3 +108,5 @@ HealthMate/
 - Zero circular dependencies — each service has its own auth middleware copy
 
 Demo docs change
+
+Demo docs change
