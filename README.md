@@ -110,3 +110,5 @@ HealthMate/
 Demo docs change
 
 Demo docs change
+
+Docs test: architecture enforcement demo.
